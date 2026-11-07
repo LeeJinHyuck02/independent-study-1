@@ -1,5 +1,31 @@
-/.venv
-/pyproject.toml
-/구현방안.md
-/설계대안.md
-/수학탐구 참여계획서 - 복사본.pdf
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- 가상환경 / 환경변수 ---
+.venv/
+venv/
+.env
+
+# --- 테스트 / 도구 캐시 ---
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# --- 데이터 캐시 및 로그 (재생성 가능) ---
+data_cache/
+results/logs/
+
+# --- 개인 문서 ---
+수학탐구 참여계획서*.pdf
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

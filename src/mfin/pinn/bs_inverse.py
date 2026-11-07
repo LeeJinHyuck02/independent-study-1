@@ -4,9 +4,10 @@ Problem (forward-normalised Black-Scholes, see ``mfin.engine.bs_analytic``)
 ----------------------------------------------------------------------------
 Unknowns: price function v(tau, x) and volatility sigma > 0.
 
-    PDE        v_tau = 1/2 sigma^2 x^2 v_xx         tau in (0, T], x in (0, x_max)
+    PDE        v_tau = 1/2 sigma^2 x^2 v_xx         tau in (0, T], x in (x_lo, x_hi)
+               x_lo, x_hi = 1 -/+ n_std * sigma_init * sqrt(T)   (diffusion-length scaling)
     initial    v(0, x) = (x - 1)^+
-    boundary   v(tau, 0) = 0,  v(tau, x_max) = x_max - 1
+    boundary   v(tau, x_lo) = (x_lo - 1)^+,  v(tau, x_hi) = x_hi - 1   (intrinsic value)
     data       v(T, x_k) = v_k   (market prices of maturity T, normalised)
 
 Singularity subtraction
@@ -27,6 +28,13 @@ the smooth correction caused by the x^2 factor in the Black-Scholes diffusion. P
 not the Black-Scholes solution: the network still has to solve the Black-Scholes PDE,
 enforced through the residual loss.
 
+Two variants (``InverseBSConfig.ref_sigma``):
+- None (default): Phi uses the trainable sigma. Accurate at every maturity, but near
+  the money Phi ~ Black-Scholes, so sigma is largely identified through Phi itself
+  (compare ``bachelier_only_sigma``).
+- a number: Phi uses that fixed vol, so sigma enters only through the PDE residual.
+  The cleaner inverse problem, but harder at short maturities.
+
 Loss = w_pde L_pde + w_bc L_bc + w_data L_data, each a mean squared residual divided by
 ``scale`` (the largest option time value in the data). The PDE residual is written in
 s units. Because the PDE term forces v to solve Black-Scholes, the forward solution is
@@ -42,6 +50,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import torch
+from scipy.optimize import least_squares
+from scipy.special import ndtr
 from torch import nn
 
 from mfin.engine.bs_analytic import black_call
@@ -56,14 +66,17 @@ def _inv_softplus(y: float) -> float:
 
 def bachelier_reference(tau: torch.Tensor, x: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     """Heat-equation solution with initial data (x - 1)^+ (Bachelier price, normal vol sigma)."""
+    # clamp keeps both branches finite, so torch.where also has finite gradients
     a = sigma * torch.sqrt(torch.clamp(tau, min=1e-14))
     z = (x - 1.0) / a
-    return (x - 1.0) * torch.special.ndtr(z) + a * _INV_SQRT_2PI * torch.exp(-0.5 * z * z)
+    val = (x - 1.0) * torch.special.ndtr(z) + a * _INV_SQRT_2PI * torch.exp(-0.5 * z * z)
+    return torch.where(tau > 0, val, torch.relu(x - 1.0))
 
 
 @dataclass
 class InverseBSConfig:
-    x_max: float = 3.0
+    x_max: float = 3.0  # upper cap of the x domain
+    n_std: float = 6.0  # domain half-width in units of sigma_init * sqrt(T)
     n_pde: int = 2000
     n_bc: int = 100
     width: int = 64
@@ -73,6 +86,9 @@ class InverseBSConfig:
     w_data: float = 10.0
     sigma_init: float = 0.3
     s_min: float = 1e-3  # smallest tau/T used for PDE points
+    # Reference Phi: None -> uses the trainable sigma; a number -> fixed normal vol, so
+    # sigma enters the model only through the PDE residual.
+    ref_sigma: float | None = None
     focus_frac: float = 0.5  # share of PDE points concentrated near the money
     seed: int = 0
     train: TrainConfig = field(default_factory=lambda: TrainConfig(adam_iters=2000, lbfgs_iters=1000))
@@ -103,7 +119,17 @@ class InverseBSPINN(nn.Module):
         w = np.ones(len(np.atleast_1d(x_data))) if weights is None else np.asarray(weights, dtype=float)
         self.w_data = to_tensor(w / w.mean())
 
+        # Local domain [x_lo, x_hi] = 1 -/+ n_std * a sqrt(T): the solution varies on the
+        # diffusion length a sqrt(T), so scaling the domain to it makes every maturity
+        # look alike to the network (short maturities fail on a fixed [0, 3] domain).
+        a = max(self.cfg.sigma_init, self.cfg.ref_sigma or 0.0)
+        half = self.cfg.n_std * a * np.sqrt(self.T)
+        self.x_lo = float(max(0.0, 1.0 - half))
+        self.x_hi = float(min(self.cfg.x_max, 1.0 + half))
+
         x = np.asarray(x_data, dtype=float)
+        if x.min() < self.x_lo or x.max() > self.x_hi:
+            raise ValueError(f"data moneyness outside the PDE domain [{self.x_lo:.3f}, {self.x_hi:.3f}]")
         time_value = np.asarray(v_data, dtype=float) - np.maximum(x - 1.0, 0.0)
         self.scale = float(max(time_value.max(), 1e-3))
 
@@ -117,11 +143,18 @@ class InverseBSPINN(nn.Module):
 
     def correction(self, tau: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         s = tau / self.T
-        z = torch.cat([2.0 * s - 1.0, 2.0 * x / self.cfg.x_max - 1.0], dim=1)
-        return self.scale * s * self.net(z)
+        z = torch.cat([2.0 * s - 1.0, 2.0 * (x - self.x_lo) / (self.x_hi - self.x_lo) - 1.0], dim=1)
+        # trainable reference: correction is O(s); fixed reference: O(sqrt(s))
+        gate = s if self.cfg.ref_sigma is None else torch.sqrt(s)
+        return self.scale * gate * self.net(z)
+
+    def reference_sigma(self) -> torch.Tensor:
+        if self.cfg.ref_sigma is None:
+            return self.sigma
+        return torch.tensor(self.cfg.ref_sigma, dtype=DTYPE)
 
     def forward(self, tau: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        return bachelier_reference(tau, x, self.sigma) + self.correction(tau, x)
+        return bachelier_reference(tau, x, self.reference_sigma()) + self.correction(tau, x)
 
     def price(self, tau, x) -> np.ndarray:
         """Learned normalised price v(tau, x) as a numpy array (broadcast inputs)."""
@@ -143,11 +176,11 @@ class InverseBSPINN(nn.Module):
         n_uni = c.n_pde - n_focus
 
         s_uni = c.s_min + (1 - c.s_min) * self._rand(n_uni)
-        x_uni = c.x_max * self._rand(n_uni)
+        x_uni = self.x_lo + (self.x_hi - self.x_lo) * self._rand(n_uni)
         # near the money, denser at small tau where the solution changes fastest
         s_foc = c.s_min + (1 - c.s_min) * self._rand(n_focus) ** 2
         width = 3.0 * c.sigma_init * torch.sqrt(T * s_foc) + 0.02
-        x_foc = (1.0 + width * self._randn(n_focus)).clamp(0.0, c.x_max)
+        x_foc = (1.0 + width * self._randn(n_focus)).clamp(self.x_lo, self.x_hi)
 
         self.tau_pde = (T * torch.cat([s_uni, s_foc])).requires_grad_(True)
         self.x_pde = torch.cat([x_uni, x_foc]).requires_grad_(True)
@@ -166,10 +199,13 @@ class InverseBSPINN(nn.Module):
         res = T * (v_tau - 0.5 * sigma**2 * x**2 * v_xx)  # residual in s = tau/T units
         l_pde = torch.mean((res / sc) ** 2)
 
-        zeros = torch.zeros_like(self.tau_bc)
-        v_lo = self(self.tau_bc, zeros)
-        v_hi = self(self.tau_bc, zeros + c.x_max)
-        l_bc = torch.mean((v_lo / sc) ** 2) + torch.mean(((v_hi - (c.x_max - 1.0)) / sc) ** 2)
+        # far from the money the option is worth its intrinsic value (error ~ e^{-n_std^2/2})
+        ones = torch.ones_like(self.tau_bc)
+        v_lo = self(self.tau_bc, ones * self.x_lo)
+        v_hi = self(self.tau_bc, ones * self.x_hi)
+        l_bc = torch.mean(((v_lo - max(self.x_lo - 1.0, 0.0)) / sc) ** 2) + torch.mean(
+            ((v_hi - (self.x_hi - 1.0)) / sc) ** 2
+        )
 
         v_d = self(torch.full_like(self.x_data, T), self.x_data)
         l_data = torch.mean(self.w_data * ((v_d - self.v_data) / sc) ** 2)
@@ -195,41 +231,44 @@ class InverseBSPINN(nn.Module):
         self.load_state_dict(other.state_dict())
 
 
+def bachelier_price_np(tau, x, sigma) -> np.ndarray:
+    """numpy version of :func:`bachelier_reference` (payoff where tau = 0)."""
+    tau, x = np.broadcast_arrays(np.asarray(tau, float), np.asarray(x, float))
+    a = sigma * np.sqrt(np.maximum(tau, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z = (x - 1.0) / a
+        val = (x - 1.0) * ndtr(z) + a * _INV_SQRT_2PI * np.exp(-0.5 * z * z)
+    return np.where(a > 0, val, np.maximum(x - 1.0, 0.0))
+
+
 def bachelier_only_sigma(T: float, x_data, v_data) -> float:
     """Ablation: sigma fitted with the reference Phi alone (network correction = 0).
 
-    Shows how much of the accuracy comes from the network solving the PDE rather than
-    from the Bachelier reference.
+    Shows how much of the sigma accuracy comes from the reference rather than from the
+    network solving the Black-Scholes PDE.
     """
-    from scipy.optimize import least_squares
-
     x = np.asarray(x_data, float)
     v = np.asarray(v_data, float)
-    from scipy.special import ndtr
-
-    def phi(sig):
-        a = sig * np.sqrt(T)
-        z = (x - 1.0) / a
-        return (x - 1.0) * ndtr(z) + a * _INV_SQRT_2PI * np.exp(-0.5 * z * z)
-
-    res = least_squares(lambda p: phi(p[0]) - v, x0=[0.2], bounds=([1e-4], [5.0]), xtol=1e-15, ftol=1e-15)
+    res = least_squares(
+        lambda p: bachelier_price_np(T, x, p[0]) - v, x0=[0.2], bounds=([1e-4], [5.0]), xtol=1e-15, ftol=1e-15
+    )
     return float(res.x[0])
 
 
 def price_error_vs_black(model: InverseBSPINN, sigma_ref: float, n_tau: int = 101, n_x: int = 301) -> dict:
     """Compare the learned price function with the closed-form Black price.
 
-    rel_l2      : ||v - v_black|| / ||v_black|| on a uniform grid of [0, T] x [0, x_max]
+    rel_l2      : ||v - v_black|| / ||v_black|| on a uniform grid of [0, T] x [x_lo, x_hi]
     max_abs_atm : max |v - v_black| at tau = T for x in [0.8, 1.2] (where data live)
     """
     tau = np.linspace(0.0, model.T, n_tau)
-    x = np.linspace(0.0, model.cfg.x_max, n_x)
+    x = np.linspace(model.x_lo, model.x_hi, n_x)
     TT, XX = np.meshgrid(tau, x, indexing="ij")
     v_hat = model.price(TT, XX)
     v_true = black_call(XX, sigma_ref**2 * TT)
     rel_l2 = float(np.linalg.norm(v_hat - v_true) / np.linalg.norm(v_true))
 
-    xa = np.linspace(0.8, 1.2, 201)
+    xa = np.linspace(max(0.8, model.x_lo), min(1.2, model.x_hi), 201)
     err_atm = np.abs(model.price(np.full_like(xa, model.T), xa) - black_call(xa, sigma_ref**2 * model.T))
     return {"rel_l2": rel_l2, "max_abs_atm": float(err_atm.max())}
 

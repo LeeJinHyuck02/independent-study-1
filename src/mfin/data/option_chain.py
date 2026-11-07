@@ -189,6 +189,20 @@ def clean_chain(
     return c[mask].sort_values(["expiry", "type", "K"]).reset_index(drop=True)
 
 
+def _plausible_discount(D: float, T: float, r: float | None, tol: float = 0.03) -> bool:
+    """Accept a fitted discount factor only if its implied rate is realistic.
+
+    A bound on D alone is not enough: for a 10-day expiry, D = 0.95 implies a 190%
+    rate. With a market rate r the implied rate must be within ``tol`` of it.
+    """
+    if not (D > 0 and T > 0):
+        return False
+    r_impl = -np.log(D) / T
+    if r is not None:
+        return abs(r_impl - r) <= tol
+    return -0.05 <= r_impl <= 0.20
+
+
 def implied_forward(
     chain: pd.DataFrame,
     r: float | None = None,
@@ -199,8 +213,9 @@ def implied_forward(
 
     For strikes within ``band`` of spot that have both a call and a put,
     C - P = D F - D K is linear in K, so a least-squares line gives D = -slope and
-    F = intercept / D. If the fit is not usable, D = exp(-rT) and F is the median of
-    K + (C - P)/D over the strikes where |C - P| is smallest.
+    F = intercept / D. The fit is kept only if its implied rate is plausible (stale or
+    noisy quotes can tilt the slope). Otherwise D = exp(-rT) and F is the median of
+    K + (C - P)/D over the near-the-money strikes.
     """
     rows = []
     for exp, g in chain.groupby("expiry"):
@@ -219,12 +234,12 @@ def implied_forward(
         if len(near) >= n_min:
             slope, intercept = np.polyfit(near.index.values, near.values, 1)
             D_fit = -slope
-            if 0.8 < D_fit <= 1.02:
+            if _plausible_discount(D_fit, T, r):
                 D, F, method = D_fit, intercept / D_fit, "regression"
         if not np.isfinite(F):
             D = float(np.exp(-(r if r is not None else 0.0) * T))
-            best = diff.abs().nsmallest(min(5, len(diff))).index
-            F = float(np.median(best.values + diff[best].values / D))
+            pts = near if len(near) >= n_min else diff[diff.abs().nsmallest(min(5, len(diff))).index]
+            F = float(np.median(pts.index.values + pts.values / D))
             method = "parity"
         rows.append({"expiry": exp, "T": T, "F": float(F), "D": float(D), "n_strikes": len(near), "method": method})
     return pd.DataFrame(rows).set_index("expiry").sort_values("T")

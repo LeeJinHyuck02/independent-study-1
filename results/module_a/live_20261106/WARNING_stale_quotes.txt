@@ -1,0 +1,1 @@
+WARNING: 100% of quotes are last-trade prices (no live bid/ask, e.g. weekend). Last trades happen at different times, so implied vols are noisy; rerun during US market hours.

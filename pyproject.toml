@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mfin"
+version = "0.1.0"
+description = "Black-Scholes / HJB based portfolio recommendation system (2026-2 math exploration project)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "yfinance",
+    "pyarrow",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow and not network'"
+markers = [
+    "slow: PINN training tests (take minutes on CPU)",
+    "network: tests that download data with yfinance",
+]

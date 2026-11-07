@@ -1,12 +1,14 @@
 """Save one daily snapshot of the full SPX option chain.
 
-Run once per trading day after the US close (06:00 KST in winter):
+Run once per trading day DURING US market hours, e.g. 15:30 ET (05:30 KST in winter,
+04:30 KST in summer). After the close Yahoo appears to drop bid/ask quotes, leaving only
+last-trade prices taken at different times:
 
     python -m mfin.data.snapshot_collector
 
-The file goes to data_cache/snapshots/<ticker>_<YYYYMMDD>.parquet, dated by the
-quote time (a Saturday run saves Friday's chain). See README for a Task Scheduler
-command that runs this automatically.
+yfinance has no historical option chains, so a missed day cannot be downloaded later.
+The file goes to data_cache/snapshots/<ticker>_<YYYYMMDD>.parquet, dated by the quote
+time. See README for a Task Scheduler command that runs this automatically.
 """
 
 from __future__ import annotations
@@ -26,7 +28,11 @@ def collect(ticker: str = "^SPX", max_days: float = 400, fallback: str | None = 
     path = SNAPSHOT_DIR / f"{name}_{day}.parquet"
     chain.to_parquet(path)
     n_exp = chain["expiry"].nunique()
-    print(f"saved {len(chain)} contracts, {n_exp} expiries, spot {chain['spot'].iloc[0]:.2f} -> {path}")
+    two_sided = float(((chain["bid"] > 0) & (chain["ask"] > 0)).mean())
+    print(f"saved {len(chain)} contracts, {n_exp} expiries, spot {chain['spot'].iloc[0]:.2f}, "
+          f"{two_sided:.0%} with live bid/ask -> {path}")
+    if two_sided < 0.5:
+        print("WARNING: most contracts have no bid/ask (market closed?). Collect during US market hours.")
     return path
 
 
