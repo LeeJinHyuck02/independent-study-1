@@ -1,10 +1,10 @@
-"""PINN building blocks shared by every physics-informed model in the project.
+"""프로젝트의 모든 물리 기반 신경망(PINN)이 함께 쓰는 구성 요소.
 
-- MLP with tanh activations (smooth, so second derivatives exist everywhere)
-- ``grad``: first derivative through autograd, keeping the graph for higher orders
-- ``train``: Adam with exponential learning-rate decay, then L-BFGS refinement
-All tensors are float64: second derivatives and L-BFGS are noticeably more accurate
-than in float32, and the networks are small enough for the CPU.
+- tanh 활성화 MLP (매끄러워서 2계 도함수가 어디서나 존재한다)
+- ``grad``: autograd로 1계 도함수를 구하되, 고계 도함수를 위해 계산 그래프를 유지한다
+- ``train``: 학습률을 지수적으로 줄이는 Adam 후 L-BFGS로 미세조정
+모든 텐서는 float64다. 2계 도함수와 L-BFGS가 float32보다 눈에 띄게 정확하고, 신경망이
+작아서 CPU로도 충분하다.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def to_tensor(a, requires_grad: bool = False) -> torch.Tensor:
 
 
 class MLP(nn.Module):
-    """Fully connected tanh network: in_dim -> [width] * depth -> out_dim."""
+    """완전연결 tanh 신경망: in_dim -> [width] * depth -> out_dim."""
 
     def __init__(self, in_dim: int, out_dim: int = 1, width: int = 64, depth: int = 4):
         super().__init__()
@@ -58,7 +58,7 @@ class MLP(nn.Module):
 
 
 def grad(y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-    """dy/dx for a column of outputs y w.r.t. a column of inputs x (graph kept)."""
+    """출력 열벡터 y를 입력 열벡터 x로 미분한 dy/dx (계산 그래프 유지)."""
     return torch.autograd.grad(y, x, grad_outputs=torch.ones_like(y), create_graph=True)[0]
 
 
@@ -79,11 +79,11 @@ def train(
     cfg: TrainConfig,
     resample_fn: Callable[[], None] | None = None,
 ) -> list[dict]:
-    """Minimise ``loss_fn`` with Adam then L-BFGS; returns the logged history.
+    """Adam 후 L-BFGS로 ``loss_fn``을 최소화하고 기록된 학습 이력을 반환한다.
 
-    ``loss_fn`` returns (total loss tensor, dict of float diagnostics). Collocation
-    points are resampled every ``resample_every`` Adam steps and kept fixed during
-    L-BFGS (it needs a deterministic objective).
+    ``loss_fn``은 (전체 손실 텐서, 진단용 float 값의 dict)를 반환한다. 콜로케이션 점은
+    Adam ``resample_every`` 단계마다 새로 뽑고, L-BFGS 동안에는 고정한다(L-BFGS는 목적함수가
+    결정적이어야 한다).
     """
     params = [p for p in params if p.requires_grad]
     history: list[dict] = []

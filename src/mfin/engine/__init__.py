@@ -1,4 +1,4 @@
-"""Reference solvers (closed form / numerical). Module A: Black-Scholes and implied vol."""
+"""기준해 계산기 (해석해 / 수치해). 모듈 A: 블랙-숄즈와 내재변동성."""
 
 from mfin.engine.bs_analytic import (
     black_call,

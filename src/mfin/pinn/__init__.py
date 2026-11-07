@@ -1,4 +1,4 @@
-"""Physics-informed neural networks (research path, compared against mfin.engine)."""
+"""물리 기반 신경망 (연구 경로. mfin.engine의 결과와 비교한다)."""
 
 from mfin.pinn.bs_inverse import (
     InverseBSConfig,

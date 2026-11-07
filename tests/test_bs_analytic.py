@@ -13,7 +13,7 @@ from mfin.engine.bs_analytic import (
 
 
 def test_textbook_value():
-    # Hull: S=K=100, T=1, r=5%, sigma=20%  ->  10.4506
+    # Hull 교재 예제: S=K=100, T=1, r=5%, sigma=20%  ->  10.4506
     assert bs_price(100, 100, 1.0, 0.05, 0.2) == pytest.approx(10.450583572185565, abs=1e-12)
 
 

@@ -1,14 +1,14 @@
-"""Module A experiments: inverse Black-Scholes PINN vs the closed-form engine.
+"""모듈 A 실험: 역방향 블랙-숄즈 PINN과 해석식 엔진의 비교.
 
     python -m mfin.experiments.module_a --synthetic [--fast]
     python -m mfin.experiments.module_a --live [--fast] [--n-pinn 5]
 
---synthetic : known sigma = 0.2, maturities 0.1 / 0.5 / 1.0. For each maturity:
-              PINN (trainable reference), PINN (fixed reference, sigma only through the
-              PDE), the Bachelier-only ablation and the closed-form least-squares fit.
---live      : SPX option chain -> Brent smile / ATM term structure / skew, inverse PINN
-              on a few maturities, forward volatility curves (Brent, PINN, VIX).
-Outputs (CSV + PNG) go to results/module_a/<synthetic | live_YYYYMMDD>/.
+--synthetic : 참값 sigma = 0.2, 만기 0.1 / 0.5 / 1.0. 만기마다 다음을 비교한다.
+              PINN(학습형 기준해), PINN(고정 기준해, sigma는 PDE로만 정해짐),
+              Bachelier 기준해만 쓴 제거 실험, 해석식 최소제곱.
+--live      : SPX 옵션체인 -> Brent smile / ATM 기간구조 / skew, 몇 개 만기에 역방향 PINN,
+              선도변동성 곡선(Brent, PINN, VIX).
+결과(CSV + PNG)는 results/module_a/<synthetic | live_YYYYMMDD>/에 저장한다.
 """
 
 from __future__ import annotations
@@ -34,7 +34,9 @@ from mfin.pinn.bs_inverse import (
 )
 from mfin.pinn.core import TrainConfig
 
-VARIANTS = {"trainable_ref": None, "fixed_ref": 0.3}
+# 변형 -> (기준해 sigma, 데이터 가중치). 고정 기준해는 데이터 + PDE로만 sigma를 정하므로
+# 큰 데이터 가중치를 유지한다 (0.1이면 sigma가 초기값 근처에 머문다).
+VARIANTS = {"trainable_ref": (None, 0.1), "fixed_ref": (0.3, 10.0)}
 
 
 def _train_cfg(fast: bool) -> TrainConfig:
@@ -44,13 +46,13 @@ def _train_cfg(fast: bool) -> TrainConfig:
 
 
 def _step_index(hist: pd.DataFrame) -> np.ndarray:
-    """Global optimisation step: Adam iterations, then L-BFGS evaluations after them."""
+    """전체 최적화 단계 번호: Adam 반복 다음에 L-BFGS 평가 횟수를 이어 붙인다."""
     adam = hist["phase"] == "adam"
     n_adam = int(hist.loc[adam, "iter"].max()) + 1 if adam.any() else 0
     return np.where(adam, hist["iter"], n_adam + hist["iter"])
 
 
-# --------------------------------------------------------------------------- synthetic
+# --------------------------------------------------------------------------- 합성 데이터
 def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.5, 1.0)) -> pd.DataFrame:
     out.mkdir(parents=True, exist_ok=True)
     rows, hists, models = [], [], {}
@@ -58,13 +60,13 @@ def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.
         x, v = synthetic_quotes(T, sigma)
         sig_engine = fit_constant_vol(x, v, T)
         sig_bach = bachelier_only_sigma(T, x, v)
-        for name, ref in VARIANTS.items():
+        for name, (ref, w_data) in VARIANTS.items():
             print(f"\n=== synthetic T={T} variant={name} ===", flush=True)
-            cfg = InverseBSConfig(ref_sigma=ref, train=_train_cfg(fast))
+            cfg = InverseBSConfig(ref_sigma=ref, w_data=w_data, train=_train_cfg(fast))
             m = InverseBSPINN(T, x, v, cfg=cfg)
             res = m.fit()
             err = price_error_vs_black(m, sigma)
-            # error of the reference Phi alone on the same grid (what the network corrects)
+            # 같은 격자에서 기준해 Phi만 쓴 오차 (신경망이 보정해야 하는 양)
             tau = np.linspace(0, T, 101)
             xs = np.linspace(m.x_lo, m.x_hi, 301)
             TT, XX = np.meshgrid(tau, xs, indexing="ij")
@@ -74,6 +76,7 @@ def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.
                 {
                     "T": T,
                     "variant": name,
+                    "w_data": w_data,
                     "sigma_true": sigma,
                     "sigma_pinn": res.sigma,
                     "rel_err_pinn": abs(res.sigma - sigma) / sigma,
@@ -101,7 +104,7 @@ def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.
     _plot.setup()
     import matplotlib.pyplot as plt
 
-    # sigma convergence: one panel per variant, one line per maturity
+    # sigma 수렴: 변형마다 패널 하나, 만기마다 선 하나
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
     for ax, name in zip(axes, VARIANTS):
         for i, T in enumerate(maturities):
@@ -114,7 +117,7 @@ def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.
     axes[0].legend()
     _plot.save(fig, out / "sigma_convergence.png")
 
-    # pointwise price error at tau = T (trainable reference)
+    # tau = T에서 점별 가격 오차 (학습형 기준해)
     fig, ax = plt.subplots(figsize=(6, 3.8))
     for i, T in enumerate(maturities):
         m = models[(T, "trainable_ref")]
@@ -134,7 +137,7 @@ def run_synthetic(out: Path, fast: bool, sigma: float = 0.2, maturities=(0.1, 0.
     return table
 
 
-# -------------------------------------------------------------------------------- live
+# -------------------------------------------------------------------------------- 실데이터
 def _pick(n_total: int, n: int) -> list[int]:
     if n_total <= n:
         return list(range(n_total))
@@ -200,7 +203,7 @@ def run_live(out_root: Path, fast: bool, n_pinn: int = 5, ticker: str = "^SPX") 
     comp = pd.DataFrame(rows)
     comp.to_csv(out / "pinn_vs_brent.csv", index=False)
 
-    # forward vol curves at the HJB sensor times
+    # HJB 센서 시점에서의 선도변동성 곡선
     curves = {"sensor_t": DEFAULT_SENSORS}
     curves["brent_atm"] = forward_vol_curve(valid["T"], valid["atm_iv"])
     if len(comp):
@@ -217,7 +220,7 @@ def run_live(out_root: Path, fast: bool, n_pinn: int = 5, ticker: str = "^SPX") 
     _plot.setup()
     import matplotlib.pyplot as plt
 
-    # smile: short / middle / long expiry
+    # smile: 짧은 / 중간 / 긴 만기
     fig, ax = plt.subplots(figsize=(6.5, 4))
     for j, i in enumerate(_pick(len(valid), 3)):
         e = valid.iloc[i]
@@ -230,7 +233,7 @@ def run_live(out_root: Path, fast: bool, n_pinn: int = 5, ticker: str = "^SPX") 
     ax.legend()
     _plot.save(fig, out / "smile.png")
 
-    # ATM term structure: Brent vs PINN vs VIX
+    # ATM 기간구조: Brent, PINN, VIX 비교
     fig, ax = plt.subplots(figsize=(6.5, 4))
     ax.plot(valid["T"], 100 * valid["atm_iv"], color=_plot.SERIES[0], marker=_plot.MARKERS[0], label="Brent ATM")
     if len(comp):
@@ -245,7 +248,7 @@ def run_live(out_root: Path, fast: bool, n_pinn: int = 5, ticker: str = "^SPX") 
     ax.legend()
     _plot.save(fig, out / "term_structure.png")
 
-    # forward vol curves (input to the HJB module)
+    # 선도변동성 곡선 (HJB 모듈의 입력)
     fig, ax = plt.subplots(figsize=(6.5, 4))
     labels = {"brent_atm": "from Brent ATM", "pinn": "from inverse PINN", "vix": "from VIX indices"}
     for j, key in enumerate([k for k in ("brent_atm", "pinn", "vix") if k in fwd_df]):

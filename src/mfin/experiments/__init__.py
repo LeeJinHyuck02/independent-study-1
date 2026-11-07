@@ -1,1 +1,1 @@
-"""Runnable experiments that write tables and figures to results/."""
+"""results/에 표와 그림을 만드는 실행용 실험 스크립트."""

@@ -22,6 +22,7 @@ results/logs/
 
 # --- 개인 문서 ---
 수학탐구 참여계획서*.pdf
+report/
 
 # --- IDE / OS ---
 .vscode/

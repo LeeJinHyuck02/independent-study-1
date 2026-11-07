@@ -1,7 +1,6 @@
-"""Implied volatility by Brent root finding on the closed-form Black price.
+"""Black 해석식 가격에 Brent 근 찾기를 적용해 내재변동성을 구한다.
 
-This is the exact reference ("engine") for module A; the inverse PINN is compared
-against it.
+모듈 A의 정확한 기준해("엔진")이며, 역방향 PINN은 이 결과와 비교한다.
 """
 
 from __future__ import annotations
@@ -23,8 +22,8 @@ def implied_vol(
     lo: float = 1e-4,
     hi: float = 5.0,
 ) -> float:
-    """Black implied volatility of one option; NaN if the price violates no-arbitrage
-    bounds or no root lies in [lo, hi]."""
+    """옵션 하나의 Black 내재변동성. 가격이 무차익 범위를 벗어나거나 [lo, hi] 안에
+    근이 없으면 NaN을 반환한다."""
     if not (np.isfinite(price) and F > 0 and K > 0 and T > 0 and D > 0):
         return float("nan")
     x = F / K
@@ -50,17 +49,17 @@ def implied_vol(
 
 
 def implied_vols(prices, F, K, T, D=1.0, kind: str = "call") -> np.ndarray:
-    """Vectorised wrapper around :func:`implied_vol` (loops over broadcast inputs)."""
+    """:func:`implied_vol`의 배열 버전 (브로드캐스트한 입력을 하나씩 반복 계산한다)."""
     b = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (prices, F, K, T, D)))
     out = np.array([implied_vol(p, f, k, t, d, kind) for p, f, k, t, d in zip(*(a.ravel() for a in b))])
     return out.reshape(b[0].shape)
 
 
 def smile(otm: pd.DataFrame) -> pd.DataFrame:
-    """Implied vol for every OTM call-equivalent row (output of ``to_otm_calls``).
+    """OTM 콜 환산 가격 행(``to_otm_calls``의 출력) 각각의 내재변동성.
 
-    Put-call parity means a put and the call built from it share one implied vol, so
-    the call-equivalent price is inverted with the call formula.
+    풋-콜 패리티에 의해 풋과 그 풋에서 만든 콜은 내재변동성이 같으므로, 콜 환산 가격을
+    콜 공식으로 역산한다.
     """
     s = otm.copy()
     s["iv"] = implied_vols(s["call_price"], s["F"], s["K"], s["T"], s["D"], "call")
@@ -68,10 +67,10 @@ def smile(otm: pd.DataFrame) -> pd.DataFrame:
 
 
 def fit_constant_vol(x, v, T: float, weights=None, sigma0: float = 0.2) -> float:
-    """Least-squares constant sigma for normalised prices v at moneyness x, maturity T.
+    """머니니스 x, 만기 T의 정규화 가격 v에 최소제곱으로 맞춘 상수 sigma.
 
-    Solves the same data-fitting problem as the inverse PINN but with the closed-form
-    price, so the two can be compared on identical inputs.
+    역방향 PINN과 같은 데이터 적합 문제를 해석식 가격으로 푼다. 그래서 둘을 같은 입력에서
+    비교할 수 있다.
     """
     x = np.asarray(x, dtype=float)
     v = np.asarray(v, dtype=float)

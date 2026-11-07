@@ -1,4 +1,4 @@
-"""Smoke tests that hit yfinance (run with:  pytest -m network)."""
+"""yfinance를 실제로 호출하는 스모크 테스트 (실행:  pytest -m network)."""
 
 import pandas as pd
 import pytest

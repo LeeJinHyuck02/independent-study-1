@@ -1,4 +1,4 @@
-"""Market data layer: prices, risk-free rate, VIX term structure, SPX option chains."""
+"""시장 데이터 계층: 가격, 무위험금리, VIX 기간구조, SPX 옵션체인."""
 
 from mfin.data.cache import DataUnavailableError, cached
 from mfin.data.loaders import ALL_SECTORS, CORE_SECTORS, get_prices, get_risk_free, latest_risk_free

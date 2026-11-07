@@ -1,9 +1,8 @@
-"""Shared matplotlib style for report figures.
+"""보고서 그림에 공통으로 쓰는 matplotlib 스타일.
 
-Colours: first three slots of the validated reference palette (blue, orange, aqua),
-which pass the colour-vision checks for every pair. Aqua is below 3:1 contrast on the
-light surface, so each figure is saved together with a CSV table and series also
-differ by marker shape.
+색: 검증된 기준 팔레트의 처음 세 색(파랑, 주황, 청록). 모든 쌍이 색각 이상 검사를
+통과한다. 청록은 밝은 배경에서 명암비가 3:1에 못 미치므로, 그림마다 CSV 표를 함께
+저장하고 계열도 마커 모양으로 구분한다.
 """
 
 from __future__ import annotations

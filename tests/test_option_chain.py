@@ -1,4 +1,4 @@
-"""Chain processing on a synthetic SPX-like chain priced with a known smile."""
+"""알려진 smile로 가격을 매긴 SPX 유사 합성 체인으로 체인 처리 과정을 검사한다."""
 
 import numpy as np
 import pandas as pd
@@ -46,7 +46,7 @@ def test_implied_forward_and_discount():
 
 
 def test_implausible_discount_falls_back_to_rate():
-    # tilt C - P across strikes (as stale quotes do): the fitted D implies a ~190% rate
+    # 행사가에 따라 C - P를 기울인다 (오래된 시세가 그렇듯): 회귀로 구한 D는 약 190% 금리에 해당
     T = 10 / 365
     chain = make_chain(maturities=(T,))
     calls = chain["type"] == "C"
@@ -62,12 +62,12 @@ def test_implausible_discount_falls_back_to_rate():
 
 def test_otm_conversion_and_smile():
     otm, fwd = prepare_chain(make_chain(), r=R)
-    # put-converted and call prices equal the model call price
+    # 풋에서 환산한 가격과 콜 가격이 모형 콜 가격과 같아야 한다
     expected = otm["D"] * otm["K"] * black_call(otm["x"], smile_vol(otm["k"]) ** 2 * otm["T"])
     assert np.allclose(otm["call_price"], expected, rtol=1e-9, atol=1e-9)
     assert set(otm.loc[otm["k"] < 0, "type"]) == {"P"} and set(otm.loc[otm["k"] > 0, "type"]) == {"C"}
     sm = smile(otm)
-    good = sm["k"].abs() < 0.15  # far wings: prices ~ 0 carry little vol information
+    good = sm["k"].abs() < 0.15  # 먼 날개 부분: 가격이 0에 가까워 변동성 정보가 거의 없다
     assert np.allclose(sm.loc[good, "iv"], smile_vol(sm.loc[good, "k"]), atol=1e-7)
 
 
@@ -80,12 +80,12 @@ def test_term_structure_atm_and_skew():
 
 def test_clean_chain_price_source_and_dedup():
     chain = make_chain(maturities=(0.25,))
-    # weekend-style quotes: no bid/ask, recent last trade -> uses last
+    # 주말형 시세: 호가 없음, 최근 체결가 있음 -> 체결가 사용
     chain.loc[0:9, ["bid", "ask"]] = 0.0
-    # stale last trade (10 days old) and no bid/ask -> dropped
+    # 오래된 체결가(10일 전)와 호가 없음 -> 제외
     chain.loc[10:19, ["bid", "ask"]] = 0.0
     chain.loc[10:19, "last_trade"] = (QUOTE - pd.Timedelta(days=10)).tz_convert("UTC")
-    # a second, smaller root on the same expiry (AM-settled SPX next to SPXW) -> removed
+    # 같은 만기의 두 번째, 더 작은 루트 (SPXW 옆의 오전 정산 SPX) -> 제거
     extra = chain.iloc[:5].copy()
     extra["root"] = "SPX"
     clean = clean_chain(pd.concat([chain, extra], ignore_index=True))

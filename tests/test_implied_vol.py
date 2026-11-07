@@ -12,7 +12,7 @@ def test_round_trip(kind):
     F, D = 100.0, 0.98
     for sig, x, T in itertools.product([0.05, 0.2, 0.5, 1.0], [0.9, 1.0, 1.1], [0.02, 0.5, 2.0]):
         K = F / x
-        if black_vega_s(x, sig * np.sqrt(T)) < 1e-6:  # price carries no vol information
+        if black_vega_s(x, sig * np.sqrt(T)) < 1e-6:  # 가격에 변동성 정보가 거의 없다 (vega ~ 0)
             continue
         price = black_price(F, K, T, sig, D, kind)
         assert implied_vol(price, F, K, T, D, kind) == pytest.approx(sig, abs=1e-8)
@@ -21,8 +21,8 @@ def test_round_trip(kind):
 def test_out_of_bounds_is_nan():
     F, K, T = 100.0, 100.0, 0.5
     assert np.isnan(implied_vol(-1.0, F, K, T))
-    assert np.isnan(implied_vol(F + 1.0, F, K, T))  # above the forward
-    assert np.isnan(implied_vol(5.0, F, 90.0, T))  # below intrinsic value 10
+    assert np.isnan(implied_vol(F + 1.0, F, K, T))  # 선도가격보다 비싸다 (콜 상한 위반)
+    assert np.isnan(implied_vol(5.0, F, 90.0, T))  # 내재가치 10보다 싸다 (하한 위반)
 
 
 def test_vectorised():

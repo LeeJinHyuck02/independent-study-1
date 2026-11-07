@@ -1,14 +1,13 @@
-"""SPX option chains: download, cleaning, implied forwards and OTM call-equivalent prices.
+"""SPX 옵션체인: 다운로드, 정제, 내재 선도가격, OTM 콜 환산 가격.
 
-Conventions
+규약
 -----------
-- T is the time to expiry in years (calendar days / 365), measured from the latest
-  quote time in the chain (so weekend downloads are measured from Friday's close).
-- F is the forward price and D the discount factor for each expiry, both implied
-  from put-call parity  C - P = D (F - K).  This absorbs dividends and rates, so no
-  separate dividend yield is needed.
-- Normalised call price  v = C / (D K)  and moneyness  x = F / K  are the variables of
-  the forward-form Black-Scholes equation  v_tau = 1/2 sigma^2 x^2 v_xx.
+- T는 만기까지 남은 시간(년, 달력일 / 365)이다. 체인 안의 가장 최근 시세 시각부터 잰다
+  (그래서 주말에 받은 데이터는 금요일 장 마감부터 잰다).
+- F는 만기별 선도가격, D는 할인계수다. 둘 다 풋-콜 패리티  C - P = D (F - K)에서 구한다.
+  배당과 금리가 여기에 흡수되므로 배당수익률을 따로 둘 필요가 없다.
+- 정규화 콜 가격  v = C / (D K)와 머니니스  x = F / K는 선도가격 형태 블랙-숄즈 방정식
+  v_tau = 1/2 sigma^2 x^2 v_xx의 변수다.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ _ROOT_RE = re.compile(r"^([A-Z]+)\d{6}[CP]\d+$")
 
 
 def expiry_timestamp(expiry: str) -> pd.Timestamp:
-    """Expiry date string -> 16:00 New York time on that date."""
+    """만기일 문자열 -> 그날 뉴욕 시각 16:00."""
     return pd.Timestamp(f"{expiry} 16:00", tz=NY)
 
 
@@ -42,8 +41,8 @@ def select_expiries(
     max_days: float = 365,
     target_days: Sequence[float] | None = None,
 ) -> list[str]:
-    """Expiries within [min_days, max_days]; if ``target_days`` is given, the expiry
-    closest to each target (duplicates removed), in time order."""
+    """[min_days, max_days] 안의 만기들. ``target_days``가 주어지면 각 목표 일수에 가장
+    가까운 만기만 고른다(중복 제거). 시간 순으로 반환한다."""
     days = {e: (expiry_timestamp(e) - asof).total_seconds() / 86400.0 for e in expiries}
     in_range = [e for e in expiries if min_days <= days[e] <= max_days]
     if not target_days:
@@ -106,7 +105,7 @@ def _download_chain(
         return pd.DataFrame()
 
     chain = pd.concat(frames, ignore_index=True)
-    # Measure maturities from the latest quote, not from "now" (weekends/holidays).
+    # 만기는 "지금"이 아니라 가장 최근 시세 시각부터 잰다 (주말·공휴일 대비).
     quote_time = min(chain["last_trade"].max().tz_convert(NY), asof)
     chain["T"] = (chain["expiry"] - quote_time).dt.total_seconds() / YEAR_SECONDS
     chain["underlying"] = ticker
@@ -126,11 +125,10 @@ def fetch_chain(
     refresh: bool = False,
     pause: float = 0.3,
 ) -> pd.DataFrame:
-    """Download an option chain (one row per contract), falling back to ``fallback``.
+    """옵션체인을 받는다(계약당 한 행). 실패하면 ``fallback`` 종목으로 대체한다.
 
-    ^SPX options are European, which matches the Black-Scholes model. SPY options are
-    American; near the money the early-exercise premium is small, so SPY is only a
-    fallback.
+    ^SPX 옵션은 유럽형이라 블랙-숄즈 모형과 맞는다. SPY 옵션은 미국형이다. ATM 근방에서는
+    조기행사 프리미엄이 작지만, SPY는 대체용으로만 쓴다.
     """
     day = pd.Timestamp.now(tz=NY).strftime("%Y%m%d")
     tag = "all" if not target_days else "-".join(str(int(t)) for t in target_days)
@@ -159,16 +157,16 @@ def clean_chain(
     require_activity: bool = True,
     max_last_age_days: float = 3.0,
 ) -> pd.DataFrame:
-    """Add a usable price per contract and drop unusable rows.
+    """계약마다 쓸 수 있는 가격을 붙이고, 쓸 수 없는 행은 버린다.
 
-    Price = bid/ask mid when both sides are quoted. Outside market hours Yahoo often
-    reports bid = ask = 0; then the last trade price is used if it is recent, and the
-    row is flagged with ``price_source == "last"``.
+    매수·매도 호가가 모두 있으면 가격 = 두 호가의 중간값(mid)이다. 장 시간 밖에는 Yahoo가
+    bid = ask = 0으로 주는 경우가 많다. 이때 최근 체결가가 있으면 그것을 쓰고
+    ``price_source == "last"``로 표시한다.
     """
     c = chain.copy()
 
-    # The same expiry can list both AM-settled (SPX) and PM-settled (SPXW) contracts;
-    # keep the root with the most contracts so strikes are not duplicated.
+    # 같은 만기에 오전 정산(SPX)과 오후 정산(SPXW) 계약이 함께 있을 수 있다.
+    # 행사가가 중복되지 않도록 계약 수가 가장 많은 쪽만 남긴다.
     if "root" in c.columns:
         counts = c.groupby(["expiry", "root"]).size().rename("n").reset_index()
         keep = counts.sort_values("n", ascending=False).drop_duplicates("expiry")
@@ -190,10 +188,10 @@ def clean_chain(
 
 
 def _plausible_discount(D: float, T: float, r: float | None, tol: float = 0.03) -> bool:
-    """Accept a fitted discount factor only if its implied rate is realistic.
+    """회귀로 구한 할인계수는 그에 해당하는 금리가 현실적일 때만 받아들인다.
 
-    A bound on D alone is not enough: for a 10-day expiry, D = 0.95 implies a 190%
-    rate. With a market rate r the implied rate must be within ``tol`` of it.
+    D의 범위만 보는 것으로는 부족하다. 10일 만기에서 D = 0.95는 연 190% 금리에 해당한다.
+    시장 금리 r이 주어지면 해당 금리가 r과 ``tol`` 이내여야 한다.
     """
     if not (D > 0 and T > 0):
         return False
@@ -209,13 +207,13 @@ def implied_forward(
     band: float = 0.05,
     n_min: int = 3,
 ) -> pd.DataFrame:
-    """Forward F and discount factor D per expiry from put-call parity.
+    """풋-콜 패리티로 만기별 선도가격 F와 할인계수 D를 구한다.
 
-    For strikes within ``band`` of spot that have both a call and a put,
-    C - P = D F - D K is linear in K, so a least-squares line gives D = -slope and
-    F = intercept / D. The fit is kept only if its implied rate is plausible (stale or
-    noisy quotes can tilt the slope). Otherwise D = exp(-rT) and F is the median of
-    K + (C - P)/D over the near-the-money strikes.
+    현물가에서 ``band`` 이내이고 콜과 풋이 모두 있는 행사가에서 C - P = D F - D K는 K에
+    대한 일차식이다. 그래서 최소제곱 직선의 기울기에서 D = -slope, 절편에서
+    F = intercept / D를 얻는다. 이 결과는 해당 금리가 그럴듯할 때만 쓴다(오래되었거나 잡음이
+    섞인 시세는 기울기를 틀어지게 한다). 그렇지 않으면 D = exp(-rT)로 두고, F는 ATM 근방
+    행사가들의 K + (C - P)/D의 중앙값으로 한다.
     """
     rows = []
     for exp, g in chain.groupby("expiry"):
@@ -246,11 +244,11 @@ def implied_forward(
 
 
 def to_otm_calls(chain: pd.DataFrame, forwards: pd.DataFrame) -> pd.DataFrame:
-    """Keep out-of-the-money options and express each as a call-equivalent price.
+    """외가격(OTM) 옵션만 남기고 각각을 콜 환산 가격으로 나타낸다.
 
-    Puts with K < F are converted with parity  C = P + D (F - K); calls with K >= F are
-    kept. OTM options are the liquid ones and carry no early-exercise premium issue.
-    Adds x = F/K, k = ln(K/F) and the normalised call price v = C / (D K).
+    K < F인 풋은 패리티  C = P + D (F - K)로 콜 가격으로 바꾸고, K >= F인 콜은 그대로 둔다.
+    OTM 옵션이 유동성이 높고 조기행사 프리미엄 문제도 없다.
+    x = F/K, k = ln(K/F), 정규화 콜 가격 v = C / (D K) 열을 추가한다.
     """
     c = chain.merge(forwards[["F", "D"]], left_on="expiry", right_index=True, how="inner")
     otm = ((c["type"] == "P") & (c["K"] < c["F"])) | ((c["type"] == "C") & (c["K"] >= c["F"]))
@@ -267,7 +265,7 @@ def to_otm_calls(chain: pd.DataFrame, forwards: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_chain(chain: pd.DataFrame, r: float | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """clean -> implied forwards -> OTM call-equivalents. Returns (otm, forwards)."""
+    """정제 -> 내재 선도가격 -> OTM 콜 환산. (otm, forwards)를 반환한다."""
     clean = clean_chain(chain)
     fwd = implied_forward(clean, r=r)
     return to_otm_calls(clean, fwd), fwd

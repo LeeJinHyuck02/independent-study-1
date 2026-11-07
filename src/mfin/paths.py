@@ -1,4 +1,4 @@
-"""Project directory helpers (cache and results live at the project root)."""
+"""프로젝트 폴더 경로 도우미 (캐시와 결과는 프로젝트 루트에 둔다)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from pathlib import Path
 
 
 def project_root() -> Path:
-    """Return the project root (the folder that holds pyproject.toml).
+    """프로젝트 루트(pyproject.toml이 있는 폴더)를 반환한다.
 
-    Order: $MFIN_ROOT, then the parents of this file (editable install), then the
-    current working directory and its parents.
+    찾는 순서: $MFIN_ROOT, 이 파일의 상위 폴더들(편집 가능 설치), 현재 작업 폴더와 그 상위
+    폴더들.
     """
     env = os.environ.get("MFIN_ROOT")
     if env:

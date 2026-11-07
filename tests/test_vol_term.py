@@ -11,7 +11,7 @@ def test_constant_vol_gives_constant_forward_vol():
 
 
 def test_piecewise_forward_variance_recovered():
-    # forward vol 0.1 on (0, 0.5], 0.3 on (0.5, 1]: w(0.5) = 0.005, w(1) = 0.05
+    # 선도변동성이 (0, 0.5]에서 0.1, (0.5, 1]에서 0.3: w(0.5) = 0.005, w(1) = 0.05
     taus = [0.5, 1.0]
     sigmas = [np.sqrt(0.005 / 0.5), np.sqrt(0.05)]
     out = forward_vol_curve(taus, sigmas, sensors=[0.25, 0.5, 0.75, 1.0, 1.5])
@@ -19,7 +19,7 @@ def test_piecewise_forward_variance_recovered():
 
 
 def test_calendar_arbitrage_is_repaired():
-    # total variance decreases (0.045 -> 0.01): forward variance would be negative
+    # 총분산이 감소한다 (0.045 -> 0.01): 보정하지 않으면 선도분산이 음수가 된다
     knots, fwd_var = forward_variance_knots([0.5, 1.0], [0.3, 0.1])
     assert np.all(fwd_var > 0)
     assert np.all(np.isfinite(forward_vol_curve([0.5, 1.0], [0.3, 0.1])))

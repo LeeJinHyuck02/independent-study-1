@@ -1,11 +1,11 @@
-"""mfin: Black-Scholes / HJB based portfolio recommendation system.
+"""mfin: 블랙-숄즈 / HJB 기반 포트폴리오 추천 시스템.
 
-Subpackages
+하위 패키지
 -----------
-data     : market data loaders (prices, risk-free rate, VIX term structure, option chains) with parquet cache
-engine   : exact/numerical reference solvers (Black-Scholes closed form, Brent implied vol, vol term structure)
-pinn     : physics-informed neural network core and the inverse Black-Scholes PINN
-experiments : runnable scripts that produce tables/figures under results/
+data        : 시장 데이터 로더 (가격, 무위험금리, VIX 기간구조, 옵션체인)와 parquet 캐시
+engine      : 정확해·수치해 기준 계산기 (블랙-숄즈 해석식, Brent 내재변동성, 변동성 기간구조)
+pinn        : 물리 기반 신경망 공통 구성 요소와 역방향 블랙-숄즈 PINN
+experiments : results/ 아래에 표와 그림을 만드는 실행 스크립트
 """
 
 __version__ = "0.1.0"

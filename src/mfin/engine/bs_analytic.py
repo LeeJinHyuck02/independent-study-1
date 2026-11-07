@@ -1,18 +1,18 @@
-"""Closed-form Black-Scholes / Black (forward) prices and Greeks.
+"""블랙-숄즈 / Black(선도가격 기준) 해석식 가격과 Greeks.
 
-Forward-normalised form (used throughout module A)
+선도가격 정규화 형태 (모듈 A 전체에서 사용)
 -------------------------------------------------
-With forward F, discount factor D, strike K, maturity T and volatility sigma,
+선도가격 F, 할인계수 D, 행사가 K, 만기 T, 변동성 sigma에 대해
 
-    C = D K c(x, w),   x = F / K,   w = sigma^2 T  (total variance)
+    C = D K c(x, w),   x = F / K,   w = sigma^2 T  (총분산)
     c(x, w) = x N(d1) - N(d2),   d1 = (ln x + w/2) / sqrt(w),   d2 = d1 - sqrt(w)
 
-The normalised undiscounted price v(tau, x) = c(x, sigma^2 tau) solves
+할인하지 않은 정규화 가격 v(tau, x) = c(x, sigma^2 tau)는 다음을 만족한다.
 
-    v_tau = 1/2 sigma^2 x^2 v_xx,   v(0, x) = (x - 1)^+,
+    v_tau = 1/2 sigma^2 x^2 v_xx,   v(0, x) = (x - 1)^+
 
-which is the Black-Scholes equation after the change of variables
-x = F/K, v = e^{r tau} V / K (rates and dividends are absorbed into F).
+이는 블랙-숄즈 방정식에 x = F/K, v = e^{r tau} V / K로 변수를 바꾼 것이다
+(금리와 배당은 F에 흡수된다).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _d1_d2(x, w):
 
 
 def black_call(x, w):
-    """Normalised undiscounted call c(x, w); returns the payoff (x-1)^+ when w = 0."""
+    """할인하지 않은 정규화 콜 가격 c(x, w). w = 0이면 만기 손익 (x-1)^+를 반환한다."""
     x = np.asarray(x, dtype=float)
     w = np.asarray(w, dtype=float)
     d1, d2, sw = _d1_d2(x, w)
@@ -49,12 +49,12 @@ def black_call(x, w):
 
 
 def black_put(x, w):
-    """Normalised undiscounted put p(x, w) = c(x, w) - (x - 1)."""
+    """할인하지 않은 정규화 풋 가격 p(x, w) = c(x, w) - (x - 1)."""
     return black_call(x, w) - (np.asarray(x, dtype=float) - 1.0)
 
 
 def black_vega_s(x, s):
-    """d c / d s with s = sigma sqrt(T) (vega per unit of total standard deviation)."""
+    """s = sigma sqrt(T)에 대한 d c / d s (총 표준편차 1단위당 vega)."""
     x = np.asarray(x, dtype=float)
     s = np.asarray(s, dtype=float)
     d1, _, _ = _d1_d2(x, s * s)
@@ -62,7 +62,7 @@ def black_vega_s(x, s):
 
 
 def black_price(F, K, T, sigma, D=1.0, kind: str = "call"):
-    """Discounted Black price from forward F."""
+    """선도가격 F로 계산한 할인된 Black 가격."""
     x = np.asarray(F, dtype=float) / np.asarray(K, dtype=float)
     w = np.square(np.asarray(sigma, dtype=float)) * np.asarray(T, dtype=float)
     c = black_call(x, w) if kind == "call" else black_put(x, w)
@@ -70,7 +70,7 @@ def black_price(F, K, T, sigma, D=1.0, kind: str = "call"):
 
 
 def bs_price(S, K, T, r, sigma, q=0.0, kind: str = "call"):
-    """Black-Scholes price with spot S, rate r and dividend yield q (continuous)."""
+    """현물가 S, 금리 r, 배당수익률 q(연속복리)로 계산한 블랙-숄즈 가격."""
     F = np.asarray(S, dtype=float) * np.exp((np.asarray(r) - np.asarray(q)) * np.asarray(T))
     D = np.exp(-np.asarray(r) * np.asarray(T))
     return black_price(F, K, T, sigma, D, kind)
@@ -95,6 +95,6 @@ def bs_gamma(S, K, T, r, sigma, q=0.0):
 
 
 def bs_vega(S, K, T, r, sigma, q=0.0):
-    """d price / d sigma (per 1.00 of volatility, not per vol point)."""
+    """d 가격 / d sigma (변동성 1.00당 값이며, vol pt(0.01)당 값이 아니다)."""
     d1 = _bs_d1(S, K, T, r, sigma, q)
     return np.asarray(S) * np.exp(-np.asarray(q) * np.asarray(T)) * norm_pdf(d1) * np.sqrt(np.asarray(T))

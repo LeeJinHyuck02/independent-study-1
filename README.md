@@ -133,7 +133,8 @@ project/
 │   │   ├── core.py               #   - MLP 아키텍처, Autograd 미분, Adam → L-BFGS 최적화
 │   │   └── bs_inverse.py         #   - 블랙-숄즈 역방향 PINN (특이점 분리 기법 탑재)
 │   └── experiments/              # [실험 및 시각화]
-│       └── module_a.py           #   - 합성/실데이터 벤치마크 실험 및 표/그래프 생성
+│       ├── module_a.py           #   - 합성/실데이터 벤치마크 실험 및 표/그래프 생성
+│       └── module_a_robustness.py #  - 잡음·smile에 대한 PINN 편향 진단 및 손실 가중치 실험
 ├── tests/                        # 단위 및 통합 테스트 (pytest)
 ├── data_cache/                   # 다운로드 캐시 및 일일 스냅샷 (gitignore 대상)
 ├── results/                      # 실험 결과 표(.tex, .csv) 및 차트(.png)
@@ -187,14 +188,18 @@ python -m mfin.data.snapshot_collector
 ```
 
 #### Windows 작업 스케줄러 자동 등록
-미국 정규장 마감(16:00 ET) 이후, 한국 시간 기준 **화~토요일 아침 07:30**에 자동으로 스냅샷을 수집하도록 Windows 작업 스케줄러에 등록할 수 있습니다.
+미국 정규장 **마감 30분 전(15:30 ET)**, 한국 시간 기준 **화~토요일 새벽 05:30**에 자동으로 스냅샷을 수집하도록 Windows 작업 스케줄러에 등록할 수 있습니다.
+
+> [!IMPORTANT]
+> 반드시 **장중**에 수집해야 합니다. 장이 끝나면 Yahoo가 호가(bid/ask)를 지워 마지막 체결가만 남고, 이 가격은 종목마다 체결 시각이 달라 내재변동성이 왜곡됩니다.
+> 미국 서머타임 기간(3월 둘째 일요일~11월 첫째 일요일, 다음 시작일 2027-03-14)에는 같은 15:30 ET가 한국 시간 **04:30**이므로 `/ST 04:30`으로 다시 등록하세요.
 
 > [!TIP]
 > PC가 켜져 있고 로그인된 상태에서 정해진 시간에 자동 실행됩니다.
 
 - **스케줄러 등록**:
   ```powershell
-  schtasks /Create /TN "mfin_spx_snapshot" /SC WEEKLY /D TUE,WED,THU,FRI,SAT /ST 07:30 /TR "\"C:\Users\wlsgu\Documents\3학년 2학기\수학탐구\project\.venv\Scripts\python.exe\" -m mfin.data.snapshot_collector"
+  schtasks /Create /TN "mfin_spx_snapshot" /SC WEEKLY /D TUE,WED,THU,FRI,SAT /ST 05:30 /TR "\"C:\Users\wlsgu\Documents\3학년 2학기\수학탐구\project\.venv\Scripts\python.exe\" -m mfin.data.snapshot_collector"
   ```
 - **스케줄러 삭제**:
   ```powershell
@@ -234,6 +239,13 @@ python -m mfin.data.snapshot_collector
 ### 4. 선도변동성 곡선 도출 및 HJB 연계
 - 각 만기별 내재변동성 $\sigma(T)$로부터 총분산 $w(T) = T \sigma^2(T)$을 계산하고, 캘린더 차익거래가 없도록 단조 증가성($w' \ge 0$)을 보정한 뒤 구간별 기울기로부터 순간 선도변동성 곡선 $\sigma_{\text{fwd}}(t)$를 추출합니다.
 - 추출된 곡선은 HJB 최적제어 모듈(모듈 B)의 입력 벡터 $u(t)$로 전달되어 시점별 최적 자산배분 비중을 결정합니다.
+
+---
+
+### 5. 손실 가중치: PDE 우선 ($w_{\text{data}} = 0.1$)
+- **문제점**: 실데이터(2026-11-06 SPX)에서 PINN의 $\sigma$가 같은 시세에 대한 해석식 최소제곱 $\sigma$보다 최대 3.6 vol pt 높게 나왔습니다. 합성 실험으로 원인을 분리한 결과, 잡음보다는 **smile**이 주원인이었습니다(smile만 넣어도 +0.6 ~ +2.8 vol pt). 상수 $\sigma$ 모형으로 설명할 수 없는 skew를 신경망이 만기 근처에서 PDE를 어기며 맞추느라 $\sigma$가 위로 치우친 것입니다.
+- **해결책**: 데이터 가중치를 PDE 가중치보다 작게 둡니다($w_{\text{pde}} = 1,\ w_{\text{data}} = 0.1$). 그러면 PINN은 "블랙-숄즈 해 중에서 데이터에 가장 가까운 해"를 찾게 되어, 잡음+smile 시나리오에서 제약 최소제곱과 0.1 vol pt 이내로 일치합니다.
+- **재현**: `python -m mfin.experiments.module_a_robustness --phase diagnose` / `--phase weights` → `results/module_a/robustness/` (자세한 표는 설계대안.md D14)
 
 ---
 
