@@ -19,6 +19,14 @@ def test_prices_and_rate():
     assert 0.0 <= r.iloc[-1] < 0.2
 
 
+def test_volume():
+    from mfin.data.loaders import get_volume
+
+    vol = get_volume(["SPY", "XLK"], start=_recent(30))
+    assert not vol.empty and list(vol.columns) == ["SPY", "XLK"]
+    assert (vol.dropna() > 0).all().all()
+
+
 def test_vix_term():
     from mfin.data.vix_term import latest_vix_term
 

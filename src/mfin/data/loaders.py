@@ -16,7 +16,8 @@ CORE_SECTORS = ["XLK", "XLF", "XLV", "XLE", "XLU"]
 ALL_SECTORS = CORE_SECTORS + ["XLB", "XLI", "XLP", "XLY", "XLRE", "XLC"]
 
 
-def _download_close(tickers: list[str], start: str, end: str | None) -> pd.DataFrame:
+def _download_field(tickers: list[str], start: str, end: str | None, field: str = "Close") -> pd.DataFrame:
+    """yfinance에서 한 필드(Close, Volume 등)만 받아 종목마다 한 열로 정리한다."""
     df = yf.download(
         tickers,
         start=start,
@@ -29,19 +30,23 @@ def _download_close(tickers: list[str], start: str, end: str | None) -> pd.DataF
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
-        close = df["Close"]
+        out = df[field]
     else:
-        close = df[["Close"]].rename(columns={"Close": tickers[0]})
-    if isinstance(close, pd.Series):
-        close = close.to_frame(tickers[0])
-    close = close.reindex(columns=tickers)
-    idx = pd.to_datetime(close.index)
+        out = df[[field]].rename(columns={field: tickers[0]})
+    if isinstance(out, pd.Series):
+        out = out.to_frame(tickers[0])
+    out = out.reindex(columns=tickers)
+    idx = pd.to_datetime(out.index)
     if idx.tz is not None:
         idx = idx.tz_localize(None)
-    close.index = idx
-    close.index.name = "date"
-    close.columns = [str(c) for c in close.columns]
-    return close.dropna(how="all").astype(float)
+    out.index = idx
+    out.index.name = "date"
+    out.columns = [str(c) for c in out.columns]
+    return out.dropna(how="all").astype(float)
+
+
+def _tickers(tickers: str | Iterable[str]) -> list[str]:
+    return [tickers] if isinstance(tickers, str) else list(tickers)
 
 
 def get_prices(
@@ -52,9 +57,22 @@ def get_prices(
     refresh: bool = False,
 ) -> pd.DataFrame:
     """수정 일별 종가. 종목마다 한 열 (인덱스: 날짜)."""
-    tickers = [tickers] if isinstance(tickers, str) else list(tickers)
+    tickers = _tickers(tickers)
     key = f"prices_{'-'.join(tickers)}_{start}_{end or 'latest'}"
-    return cached(key, lambda: retry(lambda: _download_close(tickers, start, end)), max_age, refresh)
+    return cached(key, lambda: retry(lambda: _download_field(tickers, start, end, "Close")), max_age, refresh)
+
+
+def get_volume(
+    tickers: str | Iterable[str],
+    start: str = "2005-01-01",
+    end: str | None = None,
+    max_age: timedelta | None = timedelta(days=1),
+    refresh: bool = False,
+) -> pd.DataFrame:
+    """일별 거래량(주). 시장충격 행렬 Lam의 평균 거래량(ADV) 추정에 쓴다."""
+    tickers = _tickers(tickers)
+    key = f"volume_{'-'.join(tickers)}_{start}_{end or 'latest'}"
+    return cached(key, lambda: retry(lambda: _download_field(tickers, start, end, "Volume")), max_age, refresh)
 
 
 def irx_to_continuous(irx_percent: pd.Series | float) -> pd.Series | float:

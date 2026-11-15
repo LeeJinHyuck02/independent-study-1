@@ -1,7 +1,7 @@
 """시장 데이터 계층: 가격, 무위험금리, VIX 기간구조, SPX 옵션체인."""
 
 from mfin.data.cache import DataUnavailableError, cached
-from mfin.data.loaders import ALL_SECTORS, CORE_SECTORS, get_prices, get_risk_free, latest_risk_free
+from mfin.data.loaders import ALL_SECTORS, CORE_SECTORS, get_prices, get_risk_free, get_volume, latest_risk_free
 from mfin.data.option_chain import (
     clean_chain,
     fetch_chain,
@@ -22,6 +22,7 @@ __all__ = [
     "get_prices",
     "get_risk_free",
     "get_vix_term",
+    "get_volume",
     "implied_forward",
     "latest_risk_free",
     "latest_vix_term",

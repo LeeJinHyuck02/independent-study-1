@@ -1,0 +1,36 @@
+# 기본 백테스트 설정: python -m mfin.backtest.rolling --config configs/main.toml
+
+[data]
+tickers = ["XLK", "XLF", "XLV", "XLE", "XLU"]
+benchmark = "SPY"
+start = "2005-01-01"
+end = "2026-01-01"  # yfinance의 end는 그 날을 포함하지 않는다
+
+[backtest]
+start = "2021-01-01"
+end = "2025-12-31"
+rebalance = "monthly"
+window = 252
+cost_bps = 5.0
+initial_nav = 1000000.0
+strategies = ["spy_buyhold", "equal_weight", "markowitz", "merton_hist", "proposed"]
+
+[model]
+gamma = 5.0
+horizon = 0.08333333333333333  # 보유 기간 1/12년
+erp = 0.05
+ic = 0.05
+signal_halflife = 0.5
+ewma_span = 63
+mom_lookback = 252
+mom_skip = 21
+
+[execution]
+enabled = true  # 체결 스케줄의 충격비용을 진단값으로 기록 (비용 차감은 14주차)
+horizon_days = 1.0
+n_buckets = 13
+impact_eta = 0.142
+# phi를 생략하면 gamma / (2 * NAV)
+
+[output]
+dir = "results/backtest"

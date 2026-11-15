@@ -27,3 +27,4 @@ ROOT = project_root()
 CACHE_DIR = ROOT / "data_cache"
 SNAPSHOT_DIR = CACHE_DIR / "snapshots"
 RESULTS_DIR = ROOT / "results"
+CONFIG_DIR = ROOT / "configs"

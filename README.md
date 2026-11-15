@@ -2,13 +2,12 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CPU-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Status](https://img.shields.io/badge/Status-Module%20A%20Complete-success)](#-진행-현황-및-로드맵)
+[![Status](https://img.shields.io/badge/Status-Engine%20End--to--End-success)](#-진행-현황-및-로드맵)
 [![Doc](https://img.shields.io/badge/Docs-구현방안%20%7C%20설계대안-blue)](#-관련-문서)
 
 > **2026-2 수학탐구 프로젝트**  
 > 금융수학(블랙-숄즈 PDE, Merton HJB 최적제어)과 인공지능(PINN)을 결합한 S&P 500 동적 자산배분 시스템  
 > 
-> - **연구자**: 이진혁 (수학과 3학년) | **지도교수**: 황형주 교수님  
 > - **관련 문서**: [구현방안.md](구현방안.md) (전체 설계 상세) · [설계대안.md](설계대안.md) (설계 대안 및 채택 근거)
 
 ---
@@ -23,8 +22,12 @@
    - [테스트 실행](#1-테스트-실행)
    - [모듈 A 실험 (표·그래프 생성)](#2-모듈-a-실험-표그래프-생성)
    - [옵션 데이터 수집 및 자동화](#3-옵션-데이터-수집-및-자동화)
+   - [백테스트 (모듈 D)](#4-백테스트-모듈-d)
+   - [오늘 기준 추천 (모듈 C)](#5-오늘-기준-추천-모듈-c)
+   - [모듈 B 엔진 실험](#6-모듈-b-엔진-실험)
 7. [모듈 A 핵심 수학적 설계 (보고서 요약)](#-모듈-a-핵심-수학적-설계-보고서-요약)
-8. [알려진 제약 및 엔지니어링 고려사항](#-알려진-제약-및-엔지니어링-고려사항)
+8. [모듈 B·C 핵심 설계 (보고서 요약)](#-모듈-bc-핵심-설계-보고서-요약)
+9. [알려진 제약 및 엔지니어링 고려사항](#-알려진-제약-및-엔지니어링-고려사항)
 
 ---
 
@@ -62,20 +65,20 @@ flowchart TD
         D4 --> U
     end
 
-    subgraph ModuleB ["4. 모듈 B: HJB 최적제어 (다음 단계)"]
-        U --> B_Engine["[엔진] 시점별 QP / FDM"]
-        U --> B_DeepONet["[연구] PI-DeepONet"]
-        B_Engine --> TargetWeight["최적 목표 비중 π*"]
+    subgraph ModuleB ["4. 모듈 B: HJB 최적제어 (엔진 완료)"]
+        U --> B_Engine["[엔진] B1 Merton 구간 QP<br/>B2 행렬 Riccati (+ FDM 교차검증)"]
+        U -. "12–13주차" .-> B_Neural["[연구] B2 PINN / B1 PI-DeepONet"]
+        B_Engine --> TargetWeight["최적 목표 비중 π*<br/>+ 체결 스케줄 ν*(t)"]
     end
 
-    subgraph ModuleCD ["5. 모듈 C & D: 추천 및 검증 (예정)"]
-        TargetWeight --> C["[모듈 C] 실시간 리밸런싱 주문"]
-        TargetWeight --> D["[모듈 D] 사후 백테스트 & 성과 분석"]
+    subgraph ModuleCD ["5. 모듈 C & D: 추천 및 검증 (1차 완료)"]
+        TargetWeight --> C["[모듈 C] 추천 엔진<br/>비중 · 위험 리포트 · 체결 계획"]
+        C --> D["[모듈 D] 월간 Rolling 백테스트 2021–2025"]
     end
 
     style ModuleA fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
-    style ModuleB fill:#f9f9f9,stroke:#999,stroke-dasharray: 5 5
-    style ModuleCD fill:#f9f9f9,stroke:#999,stroke-dasharray: 5 5
+    style ModuleB fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
+    style ModuleCD fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
 ```
 
 ---
@@ -86,9 +89,11 @@ flowchart TD
 | :--- | :--- | :--- | :---: | :--- |
 | **Step 1** | **데이터 계층** | 옵션체인 정제, VIX 기간구조, 캐시 시스템 | ✅ 완료 | yfinance 캐싱 및 장애 방어 |
 | **Step 1** | **모듈 A (변동성)** | 블랙-숄즈 역문제 (해석해 적합 vs 역방향 PINN) | ✅ 완료 | 특이점 분리(Bachelier) 적용 |
-| **Step 2** | **모듈 B (HJB 최적제어)** | Merton 모형 확장, QP 엔진 vs PI-DeepONet 비교 | ⏳ 예정 | 선도변동성 $\sigma_{\text{fwd}}(t)$ 연계 |
-| **Step 3** | **모듈 C (추천 엔진)** | Alpaca Paper API 연동 및 일중 슬리피지/마찰비용 제어 | ⏳ 예정 | 모의 투자 연동 |
-| **Step 4** | **모듈 D (백테스트)** | 2020~2026 역사적 데이터 기반 벤치마크 대비 성과 평가 | ⏳ 예정 | MDD, Sharpe ratio 분석 |
+| **Step 2** | **모듈 B 엔진** | Merton 해석해·제약 QP, 다자산 Almgren–Chriss Riccati, n=1·2 FDM 교차검증 | ✅ 완료 | 2026-11-15 |
+| **Step 2** | **모듈 B 연구** | B2 PINN 차원 확장(n=1→10), B1 PI-DeepONet | ⏳ 12–13주차 | `solver="neural"` 자리 마련됨 |
+| **Step 3** | **모듈 C (추천 엔진)** | 상태 추정, 목표 비중, 위험 리포트, 체결 스케줄 | ✅ 1차 완료 | 실시간 CLI 포함 |
+| **Step 4** | **모듈 D (백테스트)** | 2021–2025 월간 rolling 백테스트, 5개 전략 비교 | ✅ 1차 완료 | ablation·AUM·AC 비용 차감은 14주차 |
+| **Step 4** | **모듈 D (모의운용)** | Alpaca Paper 연동 | ⏳ 15주차 | |
 
 ---
 
@@ -128,13 +133,27 @@ project/
 │   ├── engine/                   # [운용 엔진] 전통적 금융수학 수치 알고리즘
 │   │   ├── bs_analytic.py        #   - Black-76 / 블랙-숄즈 해석해 및 Greeks 계산
 │   │   ├── implied_vol.py        #   - Brent 역산 내재변동성, 상수 σ 최소제곱 적합
-│   │   └── vol_term.py           #   - ATM 변동성 기간구조, 국소 선도변동성 곡선 σ_fwd(t)
+│   │   ├── vol_term.py           #   - ATM 변동성 기간구조, 국소 선도변동성 곡선 σ_fwd(t)
+│   │   ├── merton.py             #   - B1: Merton 계수, 정확한 제약 QP(NNLS), 구간 정책, 가치함수
+│   │   ├── riccati_ac.py         #   - B2: 다자산 Almgren–Chriss 행렬 Riccati (ODE + 닫힌 해)
+│   │   └── fdm_hjb.py            #   - B2: n=1·2 Godunov 풍상 FDM (Riccati 교차검증)
+│   ├── portfolio/                # [모듈 C] 추천 엔진
+│   │   ├── estimators.py         #   - Ledoit–Wolf 상관, EWMA 배율, 기대수익 모형, VIX/옵션 선도분산
+│   │   ├── risk.py               #   - 변동성, VaR/CVaR, 위험기여도, 보호적 풋 비용
+│   │   ├── execution.py          #   - 주문 수량, 충격 행렬 Λ, 체결 스케줄
+│   │   └── engine.py             #   - recommend() (solver 선택), 실시간 상태, CLI
+│   ├── backtest/                 # [모듈 D] Rolling-window 백테스트
+│   │   ├── strategies.py         #   - SPY B&H, 1/N, Markowitz, Merton(EWMA), 제안 모델(VIX)
+│   │   ├── rolling.py            #   - 설정 로딩, 데이터 정렬, 시뮬레이션 루프, 결과 저장
+│   │   └── metrics.py            #   - CAGR, Sharpe, Sortino, MDD, Calmar, 회전율, 비용 손실
 │   ├── pinn/                     # [연구 모듈] 물리 정보 신경망 (PINN)
 │   │   ├── core.py               #   - MLP 아키텍처, Autograd 미분, Adam → L-BFGS 최적화
 │   │   └── bs_inverse.py         #   - 블랙-숄즈 역방향 PINN (특이점 분리 기법 탑재)
 │   └── experiments/              # [실험 및 시각화]
 │       ├── module_a.py           #   - 합성/실데이터 벤치마크 실험 및 표/그래프 생성
-│       └── module_a_robustness.py #  - 잡음·smile에 대한 PINN 편향 진단 및 손실 가중치 실험
+│       ├── module_a_robustness.py #  - 잡음·smile에 대한 PINN 편향 진단 및 손실 가중치 실험
+│       └── module_b.py           #   - Riccati 차원 확장, FDM 수렴, Merton γ 비교
+├── configs/main.toml             # 백테스트 설정 (유니버스, 기간, γ, 비용, 체결)
 ├── tests/                        # 단위 및 통합 테스트 (pytest)
 ├── data_cache/                   # 다운로드 캐시 및 일일 스냅샷 (gitignore 대상)
 ├── results/                      # 실험 결과 표(.tex, .csv) 및 차트(.png)
@@ -208,6 +227,44 @@ python -m mfin.data.snapshot_collector
 
 ---
 
+### 4. 백테스트 (모듈 D)
+설정 파일 하나로 2021–2025 월간 rolling 백테스트를 돌리고 `results/backtest/main/`에 표와 그림을 만듭니다(첫 실행은 2005년부터의 데이터를 내려받습니다).
+
+```powershell
+python -m mfin.backtest.rolling --config configs/main.toml
+# 일부 전략만
+python -m mfin.backtest.rolling --config configs/main.toml --strategies equal_weight,proposed
+```
+
+2026-11-15 실행 결과는 아래와 같습니다. 조건은 γ=5, 비용 5bp, $1M입니다.
+
+| 전략 | CAGR | 연변동성 | Sharpe | MDD | 연 회전율 |
+|---|---:|---:|---:|---:|---:|
+| spy_buyhold | 14.7% | 17.1% | 0.70 | −24.5% | 0.20 |
+| equal_weight | 16.2% | 15.0% | 0.86 | −15.1% | 0.57 |
+| markowitz | 16.7% | 19.8% | 0.71 | −24.0% | 5.55 |
+| merton_hist (EWMA 변동성) | 12.8% | 10.1% | 0.92 | −10.3% | 2.65 |
+| proposed (VIX 선도변동성) | 7.7% | 6.7% | 0.65 | −5.9% | 2.17 |
+
+- proposed는 평균 63%를 현금으로 들고 갑니다. merton_hist는 44%입니다.
+- 원인은 VIX에 분산위험프리미엄이 들어 있다는 점입니다. 1개월 선도변동성이 평균 19.4%로, 실현변동성 기반 EWMA의 16.1%보다 높습니다.
+- 두 전략은 기대수익 모형이 같고 변동성 입력만 다르므로, 이 차이가 곧 변동성 입력의 효과입니다(ablation).
+
+### 5. 오늘 기준 추천 (모듈 C)
+```powershell
+python -m mfin.portfolio.engine --gamma 5 --aum 1e6               # SPX 옵션체인 -> VIX -> EWMA 순으로 변동성 결정
+python -m mfin.portfolio.engine --gamma 5 --aum 1e6 --put-hedge   # 보호적 풋 비용 포함
+```
+출력은 목표 비중(현금 포함)과 무제약 Merton 비중, 위험 리포트(변동성, 1일 VaR/CVaR, SPX skew), 30분 단위 체결 스케줄입니다.
+
+### 6. 모듈 B 엔진 실험
+```powershell
+python -m mfin.experiments.module_b --riccati --fdm --merton
+# 결과: results/module_b/ (riccati_scaling.csv, fdm_convergence.csv/png, merton_gamma.csv, riccati_trajectories.png)
+```
+
+---
+
 ## 🔬 모듈 A 핵심 수학적 설계 (보고서 요약)
 
 본 프로젝트는 전통적인 캘리브레이션 방식(Brent 역산)과 현대 딥러닝 기반 역문제 해결(Inverse PINN)을 유기적으로 비교·연계하도록 정밀하게 설계되었습니다.
@@ -249,6 +306,30 @@ python -m mfin.data.snapshot_collector
 
 ---
 
+## 🧮 모듈 B·C 핵심 설계 (보고서 요약)
+
+### 1. Merton HJB: 정확한 제약 QP
+- 공분산은 $\Sigma(t) = \sigma_{\text{fwd}}^2(t)\,C$, $C = \mathrm{diag}(s)\,R\,\mathrm{diag}(s)$로 둡니다. 시간 의존성은 모듈 A의 선도분산 하나뿐입니다.
+- 계수가 결정적이면 각 시점의 QP $\max_{\pi \ge 0,\ \mathbf 1^\top\pi \le 1}\ \pi^\top m - \tfrac{\gamma}{2}\pi^\top\Sigma\pi$가 HJB의 정확한 해입니다.
+- QP는 cvxpy 없이 정확하게 풉니다.
+  - 예산 승수를 고정하면 NNLS(Lawson–Hanson)가 됩니다.
+  - 승수는 brentq로 찾고, 자유 집합에서 KKT 등식계로 다듬습니다.
+  - KKT 잔차 ≤ 1e-10이고, 해 하나에 약 0.4ms가 걸립니다.
+- **구간 정책**: 비중을 한 달 동안 고정하면 구간 평균 $\bar m,\ \bar\Sigma$로 푼 QP가 그 구간의 정확한 최적해입니다. log 부가 정규분포라 CRRA 기대효용이 $\exp\big((1-\gamma)\Delta[\bar r + \pi^\top\bar m - \tfrac{\gamma}{2}\pi^\top\bar\Sigma\pi]\big)$에 비례하기 때문입니다.
+
+### 2. 다자산 Almgren–Chriss: 행렬 Riccati와 닫힌 해
+- $A' = A\Lambda^{-1}A - \phi\Sigma$, 최적 매매 속도 $\nu^* = \Lambda^{-1}A(t)q$, 주문 부호는 $q_0 = (\pi_{\text{cur}} - \pi^*)W/S$(양수 = 매도)입니다.
+- 닫힌 해: $\phi\Lambda^{-1/2}\Sigma\Lambda^{-1/2} = U\,\mathrm{diag}(\kappa_i^2)\,U^\top$로 분해하면 $A = \Lambda^{1/2}U\,\mathrm{diag}(\kappa_i\coth\kappa_i\tau)\,U^\top\Lambda^{1/2}$입니다. n=10까지 ODE와 1e-11 이내로 일치합니다.
+- **FDM 교차검증 (n=1, 2)**: 차원별 Godunov 풍상 스킴을 씁니다. 단조라서 점성해로 수렴하지만 1차 정확도라, n=2 101² 격자에서 오차가 6%입니다. Richardson 외삽을 하면 0.04%까지 내려갑니다. 격자 수는 $N^n$으로 늘어나므로 n≥3은 12주차 PINN의 영역입니다.
+
+### 3. 추천 엔진 입력
+- **R**: Ledoit–Wolf 상수상관 축소
+- **s**: 63일 EWMA 변동성 비율
+- **μ**: CAPM 균형수익률에 Grinold 모멘텀 view($IC\cdot\omega\cdot z\cdot\sqrt{12}$)를 더하고, 반감기 6개월로 감쇠
+- **체결**: 충격 $\Lambda_{ii} = \eta\sigma_{i,d}S_i/\text{ADV}_i$, 위험회피 $\phi = \gamma/(2W)$
+
+---
+
 ## ⚠️ 알려진 제약 및 엔지니어링 고려사항
 
 | 범주 | 항목 | 내용 및 처리 방안 |
@@ -258,6 +339,8 @@ python -m mfin.data.snapshot_collector
 | **만기 결제** | AM / PM 결제 혼재 | 동일 만기에 SPX(오전 결제)와 SPXW(오후 결제)가 공존하는 경우 유동성(종목 수)이 풍부한 체인을 자동 선택 |
 | **Smile 왜곡** | 상수 $\sigma$ 모형의 한계 | 블랙-숄즈 모형은 Volatility Smile을 설명할 수 없으므로, ATM 근방 $\lvert\ln(K/F)\rvert \le \text{clip}(0.5\sigma_{\text{ATM}}\sqrt{T}, 0.02, 0.1)$ 옵션만 엄선하여 적합 |
 | **VIX 특성** | 스왑 변동성 괴리 | VIX는 옵션 포트폴리오(분산스왑) 기반이므로 순수 ATM 블랙-숄즈 변동성과 차이가 존재 (백테스트 대리변수로만 활용) |
+| **VIX 기간구조** | ^VIX1Y 데이터 없음 | yfinance에 ^VIX1Y 이력이 없어 9일·30일·3개월·6개월 네 만기를 씁니다(6개월 이후는 평탄 외삽). 월간 QP는 30일 마디까지만 쓰므로 백테스트에는 영향이 없습니다 |
+| **백테스트** | 비중 표류 · 수정주가 | 구간 QP는 구간 내 고정 비중의 최적해이고, 실제로는 매수 후 보유라 비중이 표류합니다(O(Δσ²) 근사). 수정종가 기준이라 주식 수는 실제와 몇 % 다릅니다 |
 | **하드웨어** | CPU 연산 환경 | GPU 없이 CPU로 L-BFGS를 훈련하므로 만기 1개당 약 2~4분의 계산 시간이 소요됨 |
 
 ---
