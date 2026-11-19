@@ -24,7 +24,8 @@
    - [옵션 데이터 수집 및 자동화](#3-옵션-데이터-수집-및-자동화)
    - [백테스트 (모듈 D)](#4-백테스트-모듈-d)
    - [오늘 기준 추천 (모듈 C)](#5-오늘-기준-추천-모듈-c)
-   - [모듈 B 엔진 실험](#6-모듈-b-엔진-실험)
+   - [모듈 B 실험 (엔진, PINN 연구)](#6-모듈-b-실험)
+   - [결과 확인 앱 (Streamlit)](#7-결과-확인-앱-streamlit)
 7. [모듈 A 핵심 수학적 설계 (보고서 요약)](#-모듈-a-핵심-수학적-설계-보고서-요약)
 8. [모듈 B·C 핵심 설계 (보고서 요약)](#-모듈-bc-핵심-설계-보고서-요약)
 9. [알려진 제약 및 엔지니어링 고려사항](#-알려진-제약-및-엔지니어링-고려사항)
@@ -67,7 +68,8 @@ flowchart TD
 
     subgraph ModuleB ["4. 모듈 B: HJB 최적제어 (엔진 완료)"]
         U --> B_Engine["[엔진] B1 Merton 구간 QP<br/>B2 행렬 Riccati (+ FDM 교차검증)"]
-        U -. "12–13주차" .-> B_Neural["[연구] B2 PINN / B1 PI-DeepONet"]
+        U -.-> B_Neural["[연구] B2 PINN 차원 확장 (n≤10, 완료)<br/>B1 PI-DeepONet (13주차)"]
+        B_Neural -. "벤치마크 비교" .-> B_Engine
         B_Engine --> TargetWeight["최적 목표 비중 π*<br/>+ 체결 스케줄 ν*(t)"]
     end
 
@@ -76,9 +78,9 @@ flowchart TD
         C --> D["[모듈 D] 월간 Rolling 백테스트 2021–2025"]
     end
 
-    style ModuleA fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
-    style ModuleB fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
-    style ModuleCD fill:#e8f4fd,stroke:#2b7de9,stroke-width:2px
+    style ModuleA stroke:#2b7de9,stroke-width:2px
+    style ModuleB stroke:#2b7de9,stroke-width:2px
+    style ModuleCD stroke:#2b7de9,stroke-width:2px
 ```
 
 ---
@@ -87,11 +89,13 @@ flowchart TD
 
 | 단계 | 모듈 | 내용 | 상태 | 비고 |
 | :--- | :--- | :--- | :---: | :--- |
-| **Step 1** | **데이터 계층** | 옵션체인 정제, VIX 기간구조, 캐시 시스템 | ✅ 완료 | yfinance 캐싱 및 장애 방어 |
+| **Step 1** | **데이터 계층** | 옵션체인 정제, VIX 기간구조, 캐시 시스템, 옵션체인 스냅샷 자동 수집(GitHub Actions) | ✅ 완료 | 자동 수집은 첫 장중 실행으로 확인 예정 |
 | **Step 1** | **모듈 A (변동성)** | 블랙-숄즈 역문제 (해석해 적합 vs 역방향 PINN) | ✅ 완료 | 특이점 분리(Bachelier) 적용 |
 | **Step 2** | **모듈 B 엔진** | Merton 해석해·제약 QP, 다자산 Almgren–Chriss Riccati, n=1·2 FDM 교차검증 | ✅ 완료 | 2026-11-15 |
-| **Step 2** | **모듈 B 연구** | B2 PINN 차원 확장(n=1→10), B1 PI-DeepONet | ⏳ 12–13주차 | `solver="neural"` 자리 마련됨 |
+| **Step 2** | **모듈 B 연구 (B2)** | 다자산 Almgren–Chriss PINN 차원 확장(n=1→10), 기준해 ablation | ✅ 완료 | 2026-11-19, n=10까지 오차 0.25% 미만 |
+| **Step 2** | **모듈 B 연구 (B1)** | Merton PI-DeepONet | ⏳ 13주차 | `solver="neural"` 자리 마련됨 |
 | **Step 3** | **모듈 C (추천 엔진)** | 상태 추정, 목표 비중, 위험 리포트, 체결 스케줄 | ✅ 1차 완료 | 실시간 CLI 포함 |
+| **Step 3** | **결과 확인 앱** | Streamlit 3탭: 오늘의 추천, 추천 근거, 백테스트 비교 | ✅ 1차 완료 | `python -m mfin.app` |
 | **Step 4** | **모듈 D (백테스트)** | 2021–2025 월간 rolling 백테스트, 5개 전략 비교 | ✅ 1차 완료 | ablation·AUM·AC 비용 차감은 14주차 |
 | **Step 4** | **모듈 D (모의운용)** | Alpaca Paper 연동 | ⏳ 15주차 | |
 
@@ -113,6 +117,9 @@ python -m venv .venv
 
 # 3. 개발용 의존성 및 mfin 패키지 editable 설치
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+# 4. (선택) 결과 확인 앱용 Streamlit
+.\.venv\Scripts\python.exe -m pip install -e ".[app]"
 ```
 
 *이후 모든 Python 명령은 가상환경 인터프리터(`.\.venv\Scripts\python.exe`, 이하 `python`)로 실행합니다.*
@@ -129,7 +136,7 @@ project/
 │   │   ├── loaders.py            #   - 주가, 무위험금리(^IRX → 연속복리 r) 로더
 │   │   ├── vix_term.py           #   - VIX 기간구조 수집 (9일, 30일, 3개월, 6개월, 1년)
 │   │   ├── option_chain.py       #   - SPX 체인 수집, 풋-콜 패리티(F, D 추정), OTM 환산
-│   │   └── snapshot_collector.py #   - 일일 옵션체인 스냅샷 수집 스크립트
+│   │   └── snapshot_collector.py #   - 일일 옵션체인 스냅샷 수집 (장중·신선도 판정 후 저장)
 │   ├── engine/                   # [운용 엔진] 전통적 금융수학 수치 알고리즘
 │   │   ├── bs_analytic.py        #   - Black-76 / 블랙-숄즈 해석해 및 Greeks 계산
 │   │   ├── implied_vol.py        #   - Brent 역산 내재변동성, 상수 σ 최소제곱 적합
@@ -146,14 +153,21 @@ project/
 │   │   ├── strategies.py         #   - SPY B&H, 1/N, Markowitz, Merton(EWMA), 제안 모델(VIX)
 │   │   ├── rolling.py            #   - 설정 로딩, 데이터 정렬, 시뮬레이션 루프, 결과 저장
 │   │   └── metrics.py            #   - CAGR, Sharpe, Sortino, MDD, Calmar, 회전율, 비용 손실
+│   ├── app/                      # [결과 확인 앱] Streamlit (python -m mfin.app)
+│   │   ├── main.py               #   - 화면: 오늘의 추천 / 추천 근거 / 백테스트 비교
+│   │   ├── data.py               #   - 추천·백테스트 결과를 표와 그림용 데이터로 변환, 해석 문장
+│   │   └── charts.py             #   - Altair 그림 (라이트·다크 팔레트)
 │   ├── pinn/                     # [연구 모듈] 물리 정보 신경망 (PINN)
 │   │   ├── core.py               #   - MLP 아키텍처, Autograd 미분, Adam → L-BFGS 최적화
-│   │   └── bs_inverse.py         #   - 블랙-숄즈 역방향 PINN (특이점 분리 기법 탑재)
+│   │   ├── bs_inverse.py         #   - 블랙-숄즈 역방향 PINN (특이점 분리 기법 탑재)
+│   │   └── ac_multi.py           #   - B2: 다자산 Almgren–Chriss HJB PINN (차원 확장 실험)
 │   └── experiments/              # [실험 및 시각화]
 │       ├── module_a.py           #   - 합성/실데이터 벤치마크 실험 및 표/그래프 생성
 │       ├── module_a_robustness.py #  - 잡음·smile에 대한 PINN 편향 진단 및 손실 가중치 실험
-│       └── module_b.py           #   - Riccati 차원 확장, FDM 수렴, Merton γ 비교
+│       └── module_b.py           #   - Riccati 차원 확장, FDM 수렴, Merton γ 비교, PINN 차원 확장
+├── .github/workflows/snapshot.yml # 옵션체인 스냅샷 예약 수집 (GitHub Actions → data-snapshots 브랜치)
 ├── configs/main.toml             # 백테스트 설정 (유니버스, 기간, γ, 비용, 체결)
+├── .streamlit/config.toml        # 앱 설정 (localhost 전용, 사용 통계 끔)
 ├── tests/                        # 단위 및 통합 테스트 (pytest)
 ├── data_cache/                   # 다운로드 캐시 및 일일 스냅샷 (gitignore 대상)
 ├── results/                      # 실험 결과 표(.tex, .csv) 및 차트(.png)
@@ -198,32 +212,42 @@ python -m mfin.experiments.module_a --live --fast
 ---
 
 ### 3. 옵션 데이터 수집 및 자동화
+yfinance는 과거 옵션체인을 주지 않으므로, 매 거래일 **미국 장중**에 SPX 옵션체인 전체를 스냅샷으로 저장해 둡니다. 놓친 날은 나중에 받을 수 없습니다.
 
-#### 1회 수동 수집
-현재 시점의 SPX 옵션체인 전 종목을 다운로드하여 정제 후 스냅샷으로 보관합니다.
+#### 자동 수집: GitHub Actions (기본, PC가 꺼져 있어도 동작)
+[.github/workflows/snapshot.yml](.github/workflows/snapshot.yml)이 평일 두 번 실행되어, 결과를 이 저장소의 **`data-snapshots` 브랜치** `snapshots/` 폴더에 커밋합니다(하루 약 300KB).
+
+| 실행 (UTC) | 겨울 (EST) | 서머타임 (EDT) | 비고 |
+| :--- | :--- | :--- | :--- |
+| 16:23 | 11:23 ET | 12:23 ET | 반일장(13:00 마감)에도 장중 |
+| 19:13 | 14:13 ET | 15:13 ET | 오늘 장이 열렸는데 오늘 파일이 없으면 실패 처리 → GitHub 실패 메일 |
+
+- 수집기는 저장 전에 **ATM 근방 호가 비율 ≥ 80%** 와 **시세가 45분 이내**인지 확인합니다. 휴장일·장 마감 후 실행은 저장하지 않고 건너뜁니다(실행 요약에 경고). 같은 날 두 번 받으면 더 늦은 스냅샷이 남습니다.
+- 수동 실행: GitHub 저장소의 **Actions → option-chain-snapshot → Run workflow**. 장중에 한 번 돌려 로그의 호가 비율과 Yahoo 차단(HTTP 429) 여부를 확인하세요.
+- 예약 실행은 기본 브랜치(main)에 워크플로 파일이 있어야 동작하며, GitHub 사정으로 10–60분 늦어지거나 드물게 빠질 수 있습니다.
+
+로컬로 가져오기 (`data_cache/snapshots/`에 풀림, 같은 이름 파일은 덮어씀):
 ```powershell
-python -m mfin.data.snapshot_collector
-# 결과: data_cache/snapshots/SPX_YYYYMMDD.parquet
+git fetch origin data-snapshots
+git archive -o data_cache\snapshots.tar origin/data-snapshots snapshots
+tar -xf data_cache\snapshots.tar -C data_cache; Remove-Item data_cache\snapshots.tar
 ```
 
-#### Windows 작업 스케줄러 자동 등록
-미국 정규장 **마감 30분 전(15:30 ET)**, 한국 시간 기준 **화~토요일 새벽 05:30**에 자동으로 스냅샷을 수집하도록 Windows 작업 스케줄러에 등록할 수 있습니다.
+#### 1회 수동 수집 (로컬)
+```powershell
+python -m mfin.data.snapshot_collector                 # 결과: data_cache/snapshots/SPX_YYYYMMDD.parquet
+python -m mfin.data.snapshot_collector --force         # 판정과 무관하게 저장 (장외 시험용)
+```
 
 > [!IMPORTANT]
-> 반드시 **장중**에 수집해야 합니다. 장이 끝나면 Yahoo가 호가(bid/ask)를 지워 마지막 체결가만 남고, 이 가격은 종목마다 체결 시각이 달라 내재변동성이 왜곡됩니다.
-> 미국 서머타임 기간(3월 둘째 일요일~11월 첫째 일요일, 다음 시작일 2027-03-14)에는 같은 15:30 ET가 한국 시간 **04:30**이므로 `/ST 04:30`으로 다시 등록하세요.
+> 반드시 **장중**에 수집해야 합니다. 장이 끝나면 호가가 갱신되지 않고(주말에는 지워져 마지막 체결가만 남음), 종목마다 시각이 다른 가격이 섞여 내재변동성이 왜곡됩니다.
 
-> [!TIP]
-> PC가 켜져 있고 로그인된 상태에서 정해진 시간에 자동 실행됩니다.
-
-- **스케줄러 등록**:
-  ```powershell
-  schtasks /Create /TN "mfin_spx_snapshot" /SC WEEKLY /D TUE,WED,THU,FRI,SAT /ST 05:30 /TR "\"C:\Users\wlsgu\Documents\3학년 2학기\수학탐구\project\.venv\Scripts\python.exe\" -m mfin.data.snapshot_collector"
-  ```
-- **스케줄러 삭제**:
-  ```powershell
-  schtasks /Delete /TN "mfin_spx_snapshot" /F
-  ```
+#### 대안: Windows 작업 스케줄러 (Yahoo가 GitHub 서버를 막을 때)
+PC가 켜져 있고 로그인된 상태에서만 동작합니다. 장중이면 어느 시각이든 되므로, PC가 주로 켜져 있는 시간(겨울 한국 시간 23:30–06:00 사이)을 고르면 됩니다. 아래는 한국 시간 00:30(겨울 10:30 ET), 화~토요일 예시입니다.
+```powershell
+schtasks /Create /TN "mfin_spx_snapshot" /SC WEEKLY /D TUE,WED,THU,FRI,SAT /ST 00:30 /TR "\"C:\Users\wlsgu\Documents\3학년 2학기\수학탐구\project\.venv\Scripts\python.exe\" -m mfin.data.snapshot_collector"
+schtasks /Delete /TN "mfin_spx_snapshot" /F    # 삭제
+```
 
 ---
 
@@ -257,11 +281,54 @@ python -m mfin.portfolio.engine --gamma 5 --aum 1e6 --put-hedge   # 보호적 �
 ```
 출력은 목표 비중(현금 포함)과 무제약 Merton 비중, 위험 리포트(변동성, 1일 VaR/CVaR, SPX skew), 30분 단위 체결 스케줄입니다.
 
-### 6. 모듈 B 엔진 실험
+### 6. 모듈 B 실험
 ```powershell
+# 엔진: Riccati 차원 확장, FDM 수렴, Merton γ 비교 (1분 이내)
 python -m mfin.experiments.module_b --riccati --fdm --merton
 # 결과: results/module_b/ (riccati_scaling.csv, fdm_convergence.csv/png, merton_gamma.csv, riccati_trajectories.png)
+
+# [연구] B2 PINN 차원 확장: n = 1, 2, 3, 5, 10 × seed 3개 (CPU 약 70분)
+python -m mfin.experiments.module_b --pinn
+python -m mfin.experiments.module_b --pinn --fast --seeds 1          # 반복 수를 줄인 빠른 확인 (약 3분)
+python -m mfin.experiments.module_b --pinn --gate linear --seeds 1   # 기준해 없는 형태 ablation (약 25분)
+# 결과: pinn_scaling.csv/png, pinn_trajectory.png, pinn_history.csv (ablation은 _linear 접미사)
 ```
+
+**B2 PINN 결과** (2026-11-19, Riccati 닫힌 해 대비 상대 L2 오차, seed 3개 중앙값. 통과 기준은 ν·h(0) 모두 1% 미만)
+
+| 자산 수 n | PINN ν 오차 | PINN h(0) 오차 | 학습 시간 | 기준해 없는 PINN ν / h(0) (seed 0) | FDM N=201 ν / h(0) (계산 시간) | 격자 메모리 (축당 50점, 시간 단면 1개) |
+| :---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.023% | 0.071% | 251 s | 0.12% / 0.10% | 0.60% / 1.91% (0.03 s) | 400 B |
+| 2 | 0.018% | 0.044% | 261 s | 0.39% / 0.41% | 0.74% / 2.24% (0.9 s) | 20 KB |
+| 3 | 0.042% | 0.053% | 253 s | 0.99% / 0.73% | — | 1 MB |
+| 5 | 0.059% | 0.076% | 271 s | **1.20%** / 0.77% | — | 2.5 GB |
+| 10 | 0.22% | 0.17% | 278 s | **5.37%** / 3.46% | — | 7.8 × 10¹⁷ B |
+
+- ν는 최적 매매 속도, h(0)는 t=0의 최소 집행비용입니다. 시험점은 시간 단면 t ∈ {0, 0.25, 0.5, 0.75, 0.9}에서 상자 안 균일점 2000개와 정답 궤적 위의 점입니다.
+- **기준해 + 보정** 형태는 n=10까지 seed 3개 모두 통과했습니다. 학습 시간(4–5분)과 메모리(약 45 MB)가 n에 거의 무관합니다.
+- 기준해를 빼면 ν 오차가 5–24배 커지고 n=5부터 기준을 넘습니다. 만기 직전 경계층을 기준해가 흡수한다는 설계 의도가 확인됩니다.
+- PINN 정책으로 실제 집행한 궤적의 오차는 n=10에서 0.2%, 초과 비용은 0.001% 수준입니다.
+- 낮은 차원에서는 엔진이 압도적입니다. FDM은 수백–수천 배 빠르고, Richardson 외삽(101, 201)을 하면 h(0) 오차가 0.019%/0.014%로 PINN보다 작습니다. 그래서 **서비스 경로는 엔진을 유지**합니다. PINN의 강점은 격자 없이 n=10에서도 같은 비용으로 1% 미만을 낸다는 점입니다.
+- FDM의 궤적 오차(n=1에서 20%, CSV `traj_err`)는 1차 풍상 스킴의 성질입니다. 원점 근처 기울기에 격자 간격 수준의 치우침이 남아, 크기가 격자 1–2칸인 작은 주문에서 상대오차가 커집니다(N=201: q=0.01에서 정책 오차 82%, q=0.2에서 4%).
+
+![B2 PINN 차원 확장](results/module_b/pinn_scaling.png)
+
+### 7. 결과 확인 앱 (Streamlit)
+추천 결과와 그 근거, 백테스트 결과를 브라우저에서 봅니다. 처음 한 번 `pip install -e ".[app]"`이 필요합니다.
+```powershell
+python -m mfin.app                          # http://localhost:8501 이 열립니다 (종료: Ctrl+C)
+python -m mfin.app --server.port 8502       # 다른 포트
+```
+
+| 탭 | 내용 |
+| :--- | :--- |
+| **오늘의 추천** | 해석 문장(현금이 남는 이유, 0%인 자산의 이유 등), 주식·현금 비중, 기대 초과수익, 변동성, 사전 Sharpe, 1일 VaR/CVaR, β, 목표 비중·위험기여도 그림과 표 |
+| **추천 근거** | ① 기대수익 분해(무위험 r + CAPM β·ERP + 모멘텀 view) ② 내재변동성 기간구조 vs SPY 실현변동성 ③ Ledoit–Wolf 상관행렬 ④ 무제약 Merton 해 vs 롱온리 해, KKT 검증 |
+| **백테스트 비교** | 성과표, 누적 수익(로그축)·낙폭, 전략별 월별 비중, 제안 모델 vs Merton(과거 변동성)의 현금 비중·σ_fwd 비교 |
+
+- 사이드바의 γ, 보유기간, 변동성 출처(옵션체인/VIX), 보호적 풋 설정을 바꾸면 앞의 두 탭이 바로 다시 계산됩니다(QP 1ms 미만).
+- 시장 데이터는 앱 안에서 1시간 캐시합니다. 앞의 두 탭은 네트워크가 필요하고, 백테스트 탭은 `results/backtest/` 아래 저장된 결과만 읽습니다. 백테스트를 다시 돌리면 새 결과를 자동으로 읽습니다.
+- 주문 수량과 체결 스케줄은 앱에 없으며 CLI(5절)로 봅니다.
 
 ---
 
@@ -320,9 +387,18 @@ python -m mfin.experiments.module_b --riccati --fdm --merton
 ### 2. 다자산 Almgren–Chriss: 행렬 Riccati와 닫힌 해
 - $A' = A\Lambda^{-1}A - \phi\Sigma$, 최적 매매 속도 $\nu^* = \Lambda^{-1}A(t)q$, 주문 부호는 $q_0 = (\pi_{\text{cur}} - \pi^*)W/S$(양수 = 매도)입니다.
 - 닫힌 해: $\phi\Lambda^{-1/2}\Sigma\Lambda^{-1/2} = U\,\mathrm{diag}(\kappa_i^2)\,U^\top$로 분해하면 $A = \Lambda^{1/2}U\,\mathrm{diag}(\kappa_i\coth\kappa_i\tau)\,U^\top\Lambda^{1/2}$입니다. n=10까지 ODE와 1e-11 이내로 일치합니다.
-- **FDM 교차검증 (n=1, 2)**: 차원별 Godunov 풍상 스킴을 씁니다. 단조라서 점성해로 수렴하지만 1차 정확도라, n=2 101² 격자에서 오차가 6%입니다. Richardson 외삽을 하면 0.04%까지 내려갑니다. 격자 수는 $N^n$으로 늘어나므로 n≥3은 12주차 PINN의 영역입니다.
+- **FDM 교차검증 (n=1, 2)**: 차원별 Godunov 풍상 스킴을 씁니다. 단조라서 점성해로 수렴하지만 1차 정확도라, n=2 101² 격자에서 오차가 6%입니다. Richardson 외삽을 하면 0.04%까지 내려갑니다. 격자 수는 $N^n$으로 늘어나므로 n≥3은 아래 3절의 PINN으로 다룹니다(축당 50점만 써도 n=5에서 시간 단면 하나에 2.5 GB).
 
-### 3. 추천 엔진 입력
+### 3. [연구] B2 PINN 차원 확장 (n = 1 → 10)
+- 2절의 가치함수 $h = -q^\top A(t)q$가 만족하는 HJB $\ \partial_t h - \phi q^\top\Sigma q + \tfrac14\nabla h^\top\Lambda^{-1}\nabla h = 0$, $h(T,q) = -q^\top A_T q$ ($A_T = 10\Lambda$)를 신경망으로 풉니다. 정책은 $\nu^* = -\tfrac12\Lambda^{-1}\nabla h$입니다. 닫힌 해가 n과 무관하게 정확하므로 11차원에서도 오차를 정확히 잴 수 있습니다.
+- **기준해 + 보정**: $\tau = T - t$에 대해
+  $$h_\theta(t,q) = -\frac{q^\top\Lambda q}{\tau + 1/\alpha} + S(\tau)\,\frac{\tau}{T}\,N_\theta(t,q), \qquad S(\tau) = \frac{\mathbb E_{\text{box}}[q^\top\Lambda q]}{\tau + 1/\alpha}$$
+  - 첫 항은 위험 벌점이 없는($\phi = 0$) 문제의 정확해(TWAP + 종단 벌점)입니다. $\tau = 0$에서 종단조건이 정확히 성립하고, 만기 직전 $A$가 $10\Lambda$에서 급변하는 경계층을 신경망이 배우지 않아도 됩니다(모듈 A의 Bachelier 기준해와 같은 발상).
+  - 신경망 $N_\theta$(64×4 MLP)는 위험 벌점이 만드는 보정만 배웁니다. 해가 2차식이라는 구조는 넣지 않습니다.
+- **손실과 표본**: 잔차를 $S(\tau)/T$로 나눠 차원·시점별 크기를 맞춥니다. 콜로케이션 4096점 중 절반은 상자 균일, 절반은 원점 쪽 반경 표본입니다(10차원 상자 균일은 원점 근처를 비웁니다). 시간은 절반을 만기 근처에 모읍니다. Adam 5000회(500회마다 재추출) 후 L-BFGS 1500회를 돌립니다.
+- **결과**: n=10까지 ν·h(0) 오차 0.25% 미만, 학습 4–5분. 표는 [6. 모듈 B 실험](#6-모듈-b-실험)에 있습니다.
+
+### 4. 추천 엔진 입력
 - **R**: Ledoit–Wolf 상수상관 축소
 - **s**: 63일 EWMA 변동성 비율
 - **μ**: CAPM 균형수익률에 Grinold 모멘텀 view($IC\cdot\omega\cdot z\cdot\sqrt{12}$)를 더하고, 반감기 6개월로 감쇠
