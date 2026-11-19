@@ -1,0 +1,15 @@
+# mfin 추천 결과 확인 앱 설정 (python -m mfin.app 이 프로젝트 루트에서 실행하므로 항상 적용된다)
+
+[theme]
+primaryColor = "#2a78d6"
+
+[server]
+# 이 컴퓨터에서만 접속 (같은 네트워크의 다른 기기에 열지 않는다)
+address = "localhost"
+
+[browser]
+# Streamlit 사용 통계 전송 끔
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
